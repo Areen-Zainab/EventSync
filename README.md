@@ -70,6 +70,8 @@ EVENTSYNC replaces fragmented communication with a **unified, purpose-built coor
 
 To reduce miscommunication, improve accountability, and eliminate last-minute event execution failures by creating a structured, intelligent coordination system for teams.
 
+## People
+Areen, Maryum, Abeer, Tooba
 ---
 
 
