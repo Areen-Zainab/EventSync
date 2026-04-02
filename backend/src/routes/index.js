@@ -3,6 +3,7 @@ const router = express.Router();
 
 const authRoutes = require('./authRoutes');
 const eventRoutes = require('./eventRoutes');
+const taskRoutes = require('./taskRoutes');
 
 // Health check
 router.get('/health', (req, res) => {
@@ -11,5 +12,6 @@ router.get('/health', (req, res) => {
 
 router.use('/auth', authRoutes);
 router.use('/events', eventRoutes);
+router.use('/tasks', taskRoutes);
 
 module.exports = router;

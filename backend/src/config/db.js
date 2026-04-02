@@ -47,6 +47,13 @@ const initializeSchemaIfEnabled = async () => {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
   await pool.query(schemaSql);
+
+  const taskMigrationPath = path.join(__dirname, 'task_manual_kanban_migration.sql');
+  if (fs.existsSync(taskMigrationPath)) {
+    const taskMigrationSql = fs.readFileSync(taskMigrationPath, 'utf8');
+    await pool.query(taskMigrationSql);
+  }
+
   schemaInitialized = true;
   console.log('[DATABASE] Schema initialized successfully.');
 };

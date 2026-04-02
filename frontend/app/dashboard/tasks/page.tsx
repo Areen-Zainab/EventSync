@@ -1,24 +1,49 @@
 "use client";
-import { useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 
-const allTasks = {
-  todo: [
-    { id: 1, title: "Book AV equipment", assignee: "Omar", event: "Tech Gala", due: "Apr 10", priority: "high" },
-    { id: 2, title: "Design event banner", assignee: "Unassigned", event: "Cultural Fest", due: "Apr 8", priority: "medium" },
-    { id: 3, title: "Print attendee badges", assignee: "Sara", event: "Tech Gala", due: "Apr 12", priority: "low" },
-  ],
-  inProgress: [
-    { id: 4, title: "Confirm venue deposit", assignee: "Alex", event: "Tech Gala", due: "Apr 7", priority: "high" },
-    { id: 5, title: "Finalize speaker lineup", assignee: "Rania", event: "Tech Gala", due: "Apr 9", priority: "high" },
-    { id: 6, title: "Set up registration form", assignee: "Omar", event: "Pitch Night", due: "Apr 11", priority: "medium" },
-  ],
-  done: [
-    { id: 7, title: "Create event page", assignee: "Alex", event: "Tech Gala", due: "Apr 1", priority: "low" },
-    { id: 8, title: "Send save-the-dates", assignee: "Rania", event: "Tech Gala", due: "Apr 2", priority: "low" },
-    { id: 9, title: "Invite keynote speaker", assignee: "Alex", event: "Cultural Fest", due: "Apr 3", priority: "medium" },
-  ],
+type TaskStatus = "pending" | "in_progress" | "done";
+type TaskPriority = "low" | "medium" | "high";
+
+type Task = {
+  id: string;
+  event_id: string;
+  title: string;
+  description: string | null;
+  assigned_to: string | null;
+  status: TaskStatus;
+  due_date: string | null;
+  priority: TaskPriority;
+  created_at: string;
+  updated_at: string;
 };
+
+type EventItem = {
+  id: string;
+  name: string;
+};
+
+type ApiTasksResponse = {
+  success: boolean;
+  message?: string;
+  tasks: Task[];
+};
+
+type ApiTaskResponse = {
+  success: boolean;
+  message?: string;
+  task: Task;
+};
+
+type ApiEventsResponse = {
+  success: boolean;
+  message?: string;
+  events: EventItem[];
+};
+
+type FilterMode = "all" | "my_tasks" | "by_member" | "by_deadline" | "at_risk";
+type SortMode = "deadline" | "priority" | "assignee";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
 
 const priorityColor: Record<string, string> = {
   high: "var(--overdue)",
@@ -27,9 +52,280 @@ const priorityColor: Record<string, string> = {
 };
 
 export default function TasksPage() {
-  const [selected, setSelected] = useState<number | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [activeFilter, setActiveFilter] = useState<FilterMode>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("deadline");
+  const [createTargetStatus, setCreateTargetStatus] = useState<TaskStatus>("pending");
+  const [draft, setDraft] = useState<{
+    event_id: string;
+    title: string;
+    description: string;
+    assigned_to: string;
+    due_date: string;
+    priority: TaskPriority;
+    status: TaskStatus;
+  } | null>(null);
 
-  const selectedTask = [...allTasks.todo, ...allTasks.inProgress, ...allTasks.done].find(t => t.id === selected);
+  const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+  const currentUser =
+    typeof window !== "undefined" ? localStorage.getItem("eventsync_user") : null;
+  const currentUserId: string | null = useMemo(() => {
+    if (!currentUser) return null;
+    try {
+      const parsed = JSON.parse(currentUser) as { id?: string };
+      return parsed.id || null;
+    } catch {
+      return null;
+    }
+  }, [currentUser]);
+
+  const availableEvents = useMemo(() => {
+    const fromEvents = events.map((eventItem) => ({ id: eventItem.id, name: eventItem.name }));
+    const knownIds = new Set(fromEvents.map((eventItem) => eventItem.id));
+    const fromTasks = tasks
+      .map((task) => task.event_id)
+      .filter((eventId): eventId is string => Boolean(eventId) && !knownIds.has(eventId))
+      .map((eventId) => ({ id: eventId, name: `Event ${eventId.slice(0, 8)}...` }));
+    return [...fromEvents, ...fromTasks];
+  }, [events, tasks]);
+
+  const eventNameById = useMemo(
+    () => Object.fromEntries(availableEvents.map((eventItem) => [eventItem.id, eventItem.name])),
+    [availableEvents]
+  );
+
+  const formatDate = (isoDate: string | null): string => {
+    if (!isoDate) return "No due date";
+    const date = new Date(isoDate);
+    if (Number.isNaN(date.getTime())) return "No due date";
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+
+  const buildDraftFromTask = (task: Task | null) => ({
+    event_id: task?.event_id || availableEvents[0]?.id || "",
+    title: task?.title || "",
+    description: task?.description || "",
+    assigned_to: task?.assigned_to || "",
+    due_date: task?.due_date ? task.due_date.slice(0, 10) : "",
+    priority: task?.priority || "medium",
+    status: task?.status || "pending",
+  });
+
+  const applyFiltersAndSort = (inputTasks: Task[]): Task[] => {
+    let nextTasks = [...inputTasks];
+    if (activeFilter === "my_tasks" && currentUserId) {
+      nextTasks = nextTasks.filter((task) => task.assigned_to === currentUserId);
+    }
+    if (activeFilter === "at_risk") {
+      const now = Date.now();
+      nextTasks = nextTasks.filter((task) => {
+        const isHighPriority = task.priority === "high";
+        const isOverdue =
+          !!task.due_date && task.status !== "done" && new Date(task.due_date).getTime() < now;
+        return isHighPriority || isOverdue;
+      });
+    }
+
+    nextTasks.sort((a, b) => {
+      if (activeFilter === "by_member" || sortMode === "assignee") {
+        return (a.assigned_to || "unassigned").localeCompare(b.assigned_to || "unassigned");
+      }
+      if (activeFilter === "by_deadline" || sortMode === "deadline") {
+        const aTime = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+        const bTime = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+        return aTime - bTime;
+      }
+      if (sortMode === "priority") {
+        const order: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
+        return order[a.priority] - order[b.priority];
+      }
+      return 0;
+    });
+
+    return nextTasks;
+  };
+
+  const filteredTasks = useMemo(() => applyFiltersAndSort(tasks), [tasks, activeFilter, sortMode, currentUserId]);
+
+  const groupedTasks = useMemo(
+    () => ({
+      todo: filteredTasks.filter((task) => task.status === "pending"),
+      inProgress: filteredTasks.filter((task) => task.status === "in_progress"),
+      done: filteredTasks.filter((task) => task.status === "done"),
+    }),
+    [filteredTasks]
+  );
+
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) || null;
+
+  const authHeaders = (): HeadersInit => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  });
+
+  const loadData = async (): Promise<void> => {
+    if (!token) {
+      setError("Please log in again to manage tasks.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      const [tasksRes, eventsRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/tasks`, { headers: authHeaders() }),
+        fetch(`${API_BASE_URL}/events`, { headers: authHeaders() }),
+      ]);
+
+      const tasksData: ApiTasksResponse = await tasksRes.json();
+      const eventsData: ApiEventsResponse = await eventsRes.json();
+
+      if (!tasksRes.ok || !tasksData.success) {
+        throw new Error(tasksData.message || "Failed to fetch tasks.");
+      }
+      if (!eventsRes.ok || !eventsData.success) {
+        throw new Error(eventsData.message || "Failed to fetch events.");
+      }
+
+      setTasks(tasksData.tasks || []);
+      setEvents(eventsData.events || []);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to load task board.";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadData();
+  }, []);
+
+  const startCreateTask = (status: TaskStatus): void => {
+    setCreateTargetStatus(status);
+    setSelectedTaskId(null);
+    setDraft({
+      event_id: availableEvents[0]?.id || "",
+      title: "",
+      description: "",
+      assigned_to: "",
+      due_date: "",
+      priority: "medium",
+      status,
+    });
+  };
+
+  const startEditTask = (task: Task): void => {
+    setDraft(buildDraftFromTask(task));
+  };
+
+  const resetDraft = (): void => setDraft(null);
+
+  const saveDraft = async (): Promise<void> => {
+    if (!draft) return;
+    if (!draft.title.trim()) {
+      setError("Task title is required.");
+      return;
+    }
+    if (!token) {
+      setError("Please log in again to continue.");
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+
+    try {
+      const isEditing = Boolean(selectedTask && selectedTask.id);
+      const endpoint = isEditing ? `${API_BASE_URL}/tasks/${selectedTask?.id}` : `${API_BASE_URL}/tasks`;
+      const method = isEditing ? "PUT" : "POST";
+
+      const payload = {
+        event_id: draft.event_id || null,
+        title: draft.title.trim(),
+        description: draft.description || null,
+        assigned_to: draft.assigned_to || null,
+        due_date: draft.due_date || null,
+        priority: draft.priority,
+        status: draft.status || createTargetStatus,
+      };
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      const data: ApiTaskResponse = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to save task.");
+      }
+
+      await loadData();
+      setSelectedTaskId(data.task.id);
+      resetDraft();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save task.";
+      setError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const updateStatus = async (taskId: string, status: TaskStatus): Promise<void> => {
+    if (!token) {
+      setError("Please log in again to continue.");
+      return;
+    }
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/status`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ status }),
+      });
+      const data: ApiTaskResponse = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to update status.");
+      }
+      await loadData();
+      setSelectedTaskId(taskId);
+      if (draft) setDraft({ ...draft, status });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update status.";
+      setError(message);
+    }
+  };
+
+  const removeTask = async (taskId: string): Promise<void> => {
+    if (!token) {
+      setError("Please log in again to continue.");
+      return;
+    }
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      const data: { success: boolean; message?: string } = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to delete task.");
+      }
+      await loadData();
+      setSelectedTaskId(null);
+      resetDraft();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete task.";
+      setError(message);
+    }
+  };
 
   return (
     <div style={{ padding: '28px 32px' }}>
@@ -38,24 +334,32 @@ export default function TasksPage() {
           <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>Task Board</h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-2)' }}>All tasks across your events</p>
         </div>
-        <button className="btn-primary text-sm px-4 py-2.5">+ Add Task</button>
+        <button className="btn-primary text-sm px-4 py-2.5" onClick={() => startCreateTask("pending")}>+ Add Task</button>
       </div>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {['All Tasks', 'My Tasks', 'By Member', 'By Deadline', 'At Risk'].map(f => (
-          <button key={f} style={{ padding: '6px 14px', borderRadius: 99, border: '1px solid var(--border)', background: f === 'All Tasks' ? 'rgba(124,92,252,0.15)' : 'transparent', color: f === 'All Tasks' ? 'var(--accent)' : 'var(--text-2)', fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer' }}>{f}</button>
+        {[
+          { label: "All Tasks", value: "all" as const },
+          { label: "My Tasks", value: "my_tasks" as const },
+          { label: "By Member", value: "by_member" as const },
+          { label: "By Deadline", value: "by_deadline" as const },
+          { label: "At Risk", value: "at_risk" as const },
+        ].map((f) => (
+          <button key={f.value} onClick={() => setActiveFilter(f.value)} style={{ padding: '6px 14px', borderRadius: 99, border: '1px solid var(--border)', background: activeFilter === f.value ? 'rgba(124,92,252,0.15)' : 'transparent', color: activeFilter === f.value ? 'var(--accent)' : 'var(--text-2)', fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer' }}>{f.label}</button>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <select style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-2)', borderRadius: 8, padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer' }}>
-            <option>Sort: Deadline</option>
-            <option>Sort: Priority</option>
-            <option>Sort: Assignee</option>
+          <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-2)', borderRadius: 8, padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer' }}>
+            <option value="deadline">Sort: Deadline</option>
+            <option value="priority">Sort: Priority</option>
+            <option value="assignee">Sort: Assignee</option>
           </select>
         </div>
       </div>
+      {error && <p style={{ color: 'var(--overdue)', marginBottom: 12, fontSize: '0.8rem' }}>{error}</p>}
+      {loading && <p style={{ color: 'var(--text-3)', marginBottom: 12, fontSize: '0.8rem' }}>Loading tasks...</p>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 320px' : '1fr', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: selectedTaskId || draft ? '1fr 320px' : '1fr', gap: 20 }}>
         {/* Kanban */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {[
@@ -66,93 +370,126 @@ export default function TasksPage() {
             <div key={col} className="kanban-col" style={{ padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{col}</span>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', background: 'var(--surface-2)', padding: '2px 8px', borderRadius: 99 }}>{allTasks[key].length}</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', background: 'var(--surface-2)', padding: '2px 8px', borderRadius: 99 }}>{groupedTasks[key].length}</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {allTasks[key].map(task => (
-                  <div key={task.id} onClick={() => setSelected(task.id === selected ? null : task.id)} className="card" style={{ padding: '12px 14px', cursor: 'pointer', border: selected === task.id ? '1px solid var(--accent)' : '1px solid var(--border)', background: selected === task.id ? 'rgba(124,92,252,0.06)' : 'var(--surface)', transition: 'all 0.15s' }}>
+                {groupedTasks[key].map(task => (
+                  <div key={task.id} onClick={() => { setSelectedTaskId(task.id === selectedTaskId ? null : task.id); resetDraft(); }} className="card" style={{ padding: '12px 14px', cursor: 'pointer', border: selectedTaskId === task.id ? '1px solid var(--accent)' : '1px solid var(--border)', background: selectedTaskId === task.id ? 'rgba(124,92,252,0.06)' : 'var(--surface)', transition: 'all 0.15s' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
                       <div style={{ width: 6, height: 6, borderRadius: '50%', background: priorityColor[task.priority], marginTop: 5, flexShrink: 0 }} />
                       <p style={{ fontSize: '0.85rem', fontWeight: 500, color: key === 'done' ? 'var(--text-3)' : 'var(--text-1)', margin: 0, textDecoration: key === 'done' ? 'line-through' : 'none' }}>{task.title}</p>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent), var(--accent-3))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 700, color: '#fff' }}>{task.assignee[0]}</div>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{task.assignee}</span>
+                        <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent), var(--accent-3))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 700, color: '#fff' }}>{(task.assigned_to || "U")[0]}</div>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{task.assigned_to ? task.assigned_to.slice(0, 8) : "Unassigned"}</span>
                       </div>
-                      <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{task.due}</span>
+                      <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{formatDate(task.due_date)}</span>
                     </div>
-                    <p style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginTop: 6 }}>📅 {task.event}</p>
+                    <p style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginTop: 6 }}>📅 {eventNameById[task.event_id] || "Unknown event"}</p>
                   </div>
                 ))}
-                <button style={{ width: '100%', padding: '8px', background: 'none', border: '1px dashed var(--border)', borderRadius: 10, color: 'var(--text-3)', fontSize: '0.75rem', cursor: 'pointer' }}>+ Add task</button>
+                <button onClick={() => startCreateTask(key === "todo" ? "pending" : key === "inProgress" ? "in_progress" : "done")} style={{ width: '100%', padding: '8px', background: 'none', border: '1px dashed var(--border)', borderRadius: 10, color: 'var(--text-3)', fontSize: '0.75rem', cursor: 'pointer' }}>+ Add task</button>
               </div>
             </div>
           ))}
         </div>
 
         {/* Task Detail Panel */}
-        {selectedTask && (
+        {(selectedTask || draft) && (
           <div className="card" style={{ padding: 20, height: 'fit-content', position: 'sticky', top: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
               <h3 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-1)' }}>Task Detail</h3>
-              <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 18 }}>×</button>
+              <button onClick={() => { setSelectedTaskId(null); resetDraft(); }} style={{ background: 'none', border: 'none', color: 'var(--text-3)', cursor: 'pointer', fontSize: 18 }}>×</button>
             </div>
 
-            <h2 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-1)', marginBottom: 16, lineHeight: 1.3 }}>{selectedTask.title}</h2>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14, fontSize: '0.8rem' }}>
-              {[
-                { label: "Event", value: selectedTask.event },
-                { label: "Assignee", value: selectedTask.assignee },
-                { label: "Due Date", value: selectedTask.due },
-                { label: "Priority", value: selectedTask.priority },
-              ].map(r => (
-                <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-3)' }}>{r.label}</span>
-                  <span style={{ color: 'var(--text-1)', fontWeight: 500, textTransform: 'capitalize' }}>{r.value}</span>
+              <div>
+                <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Title</p>
+                <input
+                  className="input"
+                  value={draft ? draft.title : (selectedTask?.title || "")}
+                  onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), title: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Description</p>
+                <textarea
+                  className="input"
+                  rows={3}
+                  value={draft ? draft.description : (selectedTask?.description || "")}
+                  onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), description: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Event</p>
+                <select className="input" value={draft ? draft.event_id : (selectedTask?.event_id || "")} onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), event_id: e.target.value }))}>
+                  <option value="">None (no event)</option>
+                  {availableEvents.map((eventItem) => <option key={eventItem.id} value={eventItem.id}>{eventItem.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Assigned To (User ID)</p>
+                <input
+                  className="input"
+                  value={draft ? draft.assigned_to : (selectedTask?.assigned_to || "")}
+                  onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), assigned_to: e.target.value }))}
+                  placeholder="Leave blank for unassigned"
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Due Date</p>
+                  <input className="input" type="date" value={draft ? draft.due_date : (selectedTask?.due_date ? selectedTask.due_date.slice(0, 10) : "")} onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), due_date: e.target.value }))} />
                 </div>
-              ))}
+                <div>
+                  <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Priority</p>
+                  <select className="input" value={draft ? draft.priority : (selectedTask?.priority || "medium")} onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), priority: e.target.value as TaskPriority }))}>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </div>
+              </div>
 
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
                 <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Status</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                  {['Not Started', 'In Progress', 'Blocked', 'Done'].map(s => (
-                    <button key={s} style={{ padding: '7px', borderRadius: 8, border: '1px solid var(--border)', background: s === 'In Progress' ? 'rgba(124,92,252,0.15)' : 'transparent', color: s === 'In Progress' ? 'var(--accent)' : 'var(--text-3)', fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer' }}>{s}</button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                  {[
+                    { label: "To Do", value: "pending" as TaskStatus },
+                    { label: "In Progress", value: "in_progress" as TaskStatus },
+                    { label: "Done", value: "done" as TaskStatus },
+                  ].map((s) => (
+                    <button key={s.value} onClick={() => {
+                      if (selectedTask) {
+                        void updateStatus(selectedTask.id, s.value);
+                      } else {
+                        setDraft((prev) => prev ? { ...prev, status: s.value } : prev);
+                      }
+                    }} style={{ padding: '7px', borderRadius: 8, border: '1px solid var(--border)', background: ((draft?.status || selectedTask?.status) === s.value) ? 'rgba(124,92,252,0.15)' : 'transparent', color: ((draft?.status || selectedTask?.status) === s.value) ? 'var(--accent)' : 'var(--text-3)', fontSize: '0.72rem', fontWeight: 500, cursor: 'pointer' }}>{s.label}</button>
                   ))}
-                </div>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Sub-tasks</p>
-                {['Confirm with vendor', 'Get receipt'].map(sub => (
-                  <label key={sub} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-2)' }}>
-                    <input type="checkbox" style={{ accentColor: 'var(--accent)' }} />
-                    {sub}
-                  </label>
-                ))}
-                <button style={{ fontSize: '0.75rem', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>+ Add sub-task</button>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Activity Log</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {['Created by AI from chat · Apr 5', 'Confirmed by Alex · Apr 5', 'Assigned to Alex · Apr 5'].map(a => (
-                    <p key={a} style={{ fontSize: '0.75rem', color: 'var(--text-3)', margin: 0 }}>{a}</p>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Reminders</p>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button style={{ padding: '5px 10px', borderRadius: 99, border: '1px solid var(--border)', background: 'rgba(124,92,252,0.1)', color: 'var(--accent)', fontSize: '0.7rem', cursor: 'pointer' }}>24hr before ✓</button>
-                  <button style={{ padding: '5px 10px', borderRadius: 99, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-3)', fontSize: '0.7rem', cursor: 'pointer' }}>2hr before</button>
                 </div>
               </div>
             </div>
 
-            <button className="btn-primary text-sm" style={{ width: '100%', marginTop: 16, padding: '10px' }}>Mark Complete ✓</button>
+            {draft && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button className="btn-primary text-sm" style={{ flex: 1, padding: '10px' }} onClick={() => void saveDraft()} disabled={isSaving}>{isSaving ? "Saving..." : "Save Task"}</button>
+                <button className="btn-ghost text-sm" style={{ padding: '10px 12px' }} onClick={resetDraft}>Cancel</button>
+              </div>
+            )}
+            {selectedTask && !draft && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button className="btn-ghost text-sm" style={{ flex: 1, padding: '10px' }} onClick={() => startEditTask(selectedTask)}>
+                  Edit fields
+                </button>
+                <button className="btn-ghost text-sm" style={{ padding: '10px 12px' }} onClick={() => void removeTask(selectedTask.id)}>Delete</button>
+              </div>
+            )}
           </div>
         )}
       </div>

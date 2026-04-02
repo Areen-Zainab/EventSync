@@ -36,10 +36,14 @@ CREATE TABLE IF NOT EXISTS event_members (
 -- Tasks
 CREATE TABLE IF NOT EXISTS tasks (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  event_id    UUID REFERENCES events(id) ON DELETE CASCADE,
+  created_by  UUID REFERENCES users(id) ON DELETE SET NULL,
   title       VARCHAR(200) NOT NULL,
+  description TEXT,
   assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
   status      VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'done')),
   due_date    TIMESTAMPTZ,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  priority    VARCHAR(20) NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
