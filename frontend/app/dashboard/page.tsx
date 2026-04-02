@@ -138,7 +138,7 @@ export default function DashboardPage() {
             <h2 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-1)', marginBottom: 14 }}>⏰ Deadlines (48hr)</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {deadlines.map(d => (
-                <div key={d.title} style={{ display: 'flex', alignItems: 'center', justify: 'space-between', gap: 10, padding: '10px 12px', background: 'var(--surface-2)', borderRadius: 10, border: `1px solid ${d.hoursLeft < 12 ? 'rgba(255,107,107,0.3)' : 'var(--border)'}` }}>
+                <div key={d.title} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', background: 'var(--surface-2)', borderRadius: 10, border: `1px solid ${d.hoursLeft < 12 ? 'rgba(255,107,107,0.3)' : 'var(--border)'}` }}>
                   <div>
                     <p style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-1)', margin: 0 }}>{d.title}</p>
                     <p style={{ fontSize: '0.7rem', color: 'var(--text-3)', margin: 0 }}>{d.event}</p>

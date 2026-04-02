@@ -1,12 +1,101 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type AuthFormProps = { mode: "login" | "signup" };
 
+type AuthApiResponse = {
+  success: boolean;
+  message?: string;
+  token?: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    role: "Organizer" | "Member";
+  };
+};
+
 export default function AuthForm({ mode }: AuthFormProps) {
   const isLogin = mode === "login";
+  const router = useRouter();
   const [role, setRole] = useState<"organizer" | "member">("organizer");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    setSuccessMessage("");
+
+    if (!email.trim() || !password.trim()) {
+      setError("Email and password are required.");
+      return;
+    }
+
+    if (!isLogin) {
+      if (!name.trim()) {
+        setError("Full name is required.");
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        setError("Passwords do not match.");
+        return;
+      }
+
+      if (!privacyConsent) {
+        setError("You must accept the privacy policy.");
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+
+    const endpoint = isLogin ? "login" : "signup";
+    const payload = isLogin
+      ? { email: email.trim(), password }
+      : {
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          role: role === "organizer" ? "Organizer" : "Member",
+          privacy_consent: privacyConsent,
+        };
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result: AuthApiResponse = await response.json();
+
+      if (!response.ok || !result.success || !result.token || !result.user) {
+        setError(result.message || "Authentication failed. Please try again.");
+        return;
+      }
+
+      localStorage.setItem("eventsync_token", result.token);
+      localStorage.setItem("eventsync_user", JSON.stringify(result.user));
+      setSuccessMessage(isLogin ? "Login successful." : "Signup successful.");
+      router.push("/dashboard");
+    } catch {
+      setError("Unable to connect to server. Please check backend is running.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--bg)' }} className="grid-bg">
@@ -58,36 +147,36 @@ export default function AuthForm({ mode }: AuthFormProps) {
             {isLogin ? 'Sign in to your EventSync workspace.' : 'Start coordinating smarter in minutes.'}
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <form style={{ display: 'flex', flexDirection: 'column', gap: 16 }} onSubmit={handleSubmit}>
             {!isLogin && (
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Full name</label>
-                <input className="input" placeholder="Jane Doe" />
+                <input className="input" placeholder="Jane Doe" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
             )}
 
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Email address</label>
-              <input className="input" type="email" placeholder="you@university.edu" />
+              <input className="input" type="email" placeholder="you@university.edu" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
 
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Password</label>
-              <input className="input" type="password" placeholder="••••••••" />
+              <input className="input" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
 
             {!isLogin && (
               <>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Confirm password</label>
-                  <input className="input" type="password" placeholder="••••••••" />
+                  <input className="input" type="password" placeholder="••••••••" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 8 }}>Your role</label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     {(['organizer', 'member'] as const).map(r => (
-                      <button key={r} onClick={() => setRole(r)} style={{
+                      <button type="button" key={r} onClick={() => setRole(r)} style={{
                         padding: '12px',
                         borderRadius: 10,
                         border: `1px solid ${role === r ? 'var(--accent)' : 'var(--border)'}`,
@@ -106,7 +195,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 </div>
 
                 <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
-                  <input type="checkbox" style={{ marginTop: 2, accentColor: 'var(--accent)' }} />
+                  <input type="checkbox" checked={privacyConsent} onChange={(e) => setPrivacyConsent(e.target.checked)} style={{ marginTop: 2, accentColor: 'var(--accent)' }} />
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-2)', lineHeight: 1.5 }}>
                     I agree to the <a href="#" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Privacy Policy</a> and consent to data processing as described.
                   </span>
@@ -114,8 +203,16 @@ export default function AuthForm({ mode }: AuthFormProps) {
               </>
             )}
 
-            <button className="btn-primary py-3 text-sm mt-2" style={{ width: '100%' }}>
-              {isLogin ? 'Sign in' : 'Create account'} →
+            {error && (
+              <p style={{ color: '#ef4444', fontSize: '0.85rem' }}>{error}</p>
+            )}
+
+            {successMessage && (
+              <p style={{ color: '#10b981', fontSize: '0.85rem' }}>{successMessage}</p>
+            )}
+
+            <button type="submit" className="btn-primary py-3 text-sm mt-2" style={{ width: '100%' }} disabled={isSubmitting}>
+              {isSubmitting ? 'Please wait...' : `${isLogin ? 'Sign in' : 'Create account'} →`}
             </button>
 
             {isLogin && (
@@ -123,7 +220,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 <a href="#" style={{ color: 'var(--text-3)', textDecoration: 'none' }}>Forgot password?</a>
               </p>
             )}
-          </div>
+          </form>
 
           <p style={{ marginTop: 24, textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-2)' }}>
             {isLogin ? "Don't have an account? " : "Already have an account? "}
