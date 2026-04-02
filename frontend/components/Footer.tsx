@@ -2,18 +2,22 @@ import Link from "next/link";
 
 export default function Footer() {
   return (
-    <footer className="border-t border-gray-100 bg-white py-10 px-6">
-      <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-        <span className="text-lg font-bold text-indigo-600">EVENTSYNC</span>
-
-        <div className="flex gap-6 text-sm text-gray-500">
-          <Link href="#features" className="hover:text-indigo-600 transition-colors">Features</Link>
-          <Link href="#about" className="hover:text-indigo-600 transition-colors">About</Link>
-          <Link href="/login" className="hover:text-indigo-600 transition-colors">Login</Link>
-          <Link href="/signup" className="hover:text-indigo-600 transition-colors">Sign Up</Link>
+    <footer style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)', padding: '40px 24px' }}>
+      <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="flex items-center gap-2">
+          <span style={{ background: 'var(--accent)', borderRadius: 8, width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>⚡</span>
+          <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, color: 'var(--text-1)' }}>EventSync</span>
         </div>
 
-        <p className="text-xs text-gray-400">© {new Date().getFullYear()} EVENTSYNC. All rights reserved.</p>
+        <div className="flex gap-6 text-sm" style={{ color: 'var(--text-3)' }}>
+          {['Features', 'Pricing', 'Privacy Policy', 'Terms'].map(l => (
+            <Link key={l} href="#" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:text-white transition-colors">{l}</Link>
+          ))}
+        </div>
+
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>
+          © {new Date().getFullYear()} EventSync. All rights reserved.
+        </p>
       </div>
     </footer>
   );
