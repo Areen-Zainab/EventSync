@@ -2,46 +2,64 @@ const features = [
   {
     icon: "🤖",
     title: "AI Task Extraction",
-    description: "Automatically pull action items from team conversations and turn them into structured tasks.",
+    description: "NLP scans every chat message and surfaces action items with suggested assignees and deadlines — you just confirm.",
+    accent: "#7c5cfc",
+  },
+  {
+    icon: "📊",
+    title: "Execution Stability Score",
+    description: "A real-time 0–100 health score per event. Know instantly if you're On Track, At Risk, or Overdue.",
+    accent: "#00d4aa",
   },
   {
     icon: "🔔",
-    title: "Smart Notifications",
-    description: "Get context-aware alerts that surface what matters most, right when you need it.",
+    title: "Smart Risk Alerts",
+    description: "AI proactively flags overdue dependencies before they cascade — 'Vendor deadline unconfirmed, 2 days left.'",
+    accent: "#ffb347",
   },
   {
-    icon: "🤝",
-    title: "Team Coordination",
-    description: "Assign, track, and collaborate on event tasks across your entire team in one place.",
+    icon: "🎯",
+    title: "Kanban Task Board",
+    description: "Visual To Do → In Progress → Done flow with overdue highlighting and one-tap reassignment.",
+    accent: "#ff6b6b",
   },
   {
-    icon: "⚡",
-    title: "Real-Time Updates",
-    description: "Stay in sync with live updates across workspaces so nothing slips through the cracks.",
+    icon: "💬",
+    title: "Event-Scoped Chat",
+    description: "Purpose-built chat per event. @ mentions, pinned messages, file attachments — not another Slack.",
+    accent: "#7c5cfc",
+  },
+  {
+    icon: "👥",
+    title: "Role-Based Access",
+    description: "Organizer, Coordinator, or Member — each sees exactly what they need. Invite by email or shareable link.",
+    accent: "#00d4aa",
   },
 ];
 
 export default function FeatureSection() {
   return (
-    <section id="features" className="py-24 px-6 bg-white">
-      <div className="max-w-5xl mx-auto text-center mb-14">
-        <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Everything your team needs</h2>
-        <p className="mt-4 text-gray-500 text-lg">
-          Built for event teams who move fast and can't afford to miss a beat.
-        </p>
-      </div>
+    <section id="features" style={{ padding: '96px 24px', background: 'var(--bg)' }}>
+      <div className="max-w-5xl mx-auto">
+        <div className="text-center mb-16">
+          <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: 'clamp(1.75rem, 4vw, 2.5rem)', fontWeight: 800, color: 'var(--text-1)', marginBottom: 12 }}>
+            Everything your team needs to ship events
+          </h2>
+          <p style={{ color: 'var(--text-2)', fontSize: '1rem', maxWidth: 480, margin: '0 auto' }}>
+            Built for student orgs, campus teams, and anyone who runs events fast.
+          </p>
+        </div>
 
-      <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {features.map((f) => (
-          <div
-            key={f.title}
-            className="bg-gray-50 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow border border-gray-100"
-          >
-            <div className="text-3xl mb-4">{f.icon}</div>
-            <h3 className="font-semibold text-gray-900 text-lg mb-2">{f.title}</h3>
-            <p className="text-gray-500 text-sm leading-relaxed">{f.description}</p>
-          </div>
-        ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {features.map((f) => (
+            <div key={f.title} className="card card-hover p-6" style={{ position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${f.accent}, transparent)` }} />
+              <div style={{ fontSize: 28, marginBottom: 14 }}>{f.icon}</div>
+              <h3 style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, fontSize: '1rem', color: 'var(--text-1)', marginBottom: 8 }}>{f.title}</h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', lineHeight: 1.6 }}>{f.description}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
