@@ -1,4 +1,5 @@
 "use client";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 type TaskStatus = "pending" | "in_progress" | "done";
@@ -52,6 +53,7 @@ const priorityColor: Record<string, string> = {
 };
 
 export default function TasksPage() {
+  const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -206,6 +208,48 @@ export default function TasksPage() {
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    const taskIdFromQuery = searchParams.get("taskId");
+    const eventIdFromQuery = searchParams.get("eventId");
+    const statusFromQuery = searchParams.get("status");
+
+    if (taskIdFromQuery) {
+      const taskExists = tasks.some((task) => task.id === taskIdFromQuery);
+      if (taskExists) {
+        setSelectedTaskId(taskIdFromQuery);
+        setDraft(null);
+      }
+      return;
+    }
+
+    if (!eventIdFromQuery && !statusFromQuery) return;
+
+    const statusMap: Record<string, TaskStatus> = {
+      todo: "pending",
+      inProgress: "in_progress",
+      done: "done",
+      pending: "pending",
+      in_progress: "in_progress",
+    };
+    const resolvedStatus = statusMap[statusFromQuery || ""] || "pending";
+    const resolvedEventId =
+      eventIdFromQuery && availableEvents.some((eventItem) => eventItem.id === eventIdFromQuery)
+        ? eventIdFromQuery
+        : availableEvents[0]?.id || "";
+
+    setCreateTargetStatus(resolvedStatus);
+    setSelectedTaskId(null);
+    setDraft({
+      event_id: resolvedEventId,
+      title: "",
+      description: "",
+      assigned_to: "",
+      due_date: "",
+      priority: "medium",
+      status: resolvedStatus,
+    });
+  }, [searchParams, tasks, availableEvents]);
 
   const startCreateTask = (status: TaskStatus): void => {
     setCreateTargetStatus(status);

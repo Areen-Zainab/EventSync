@@ -6,13 +6,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
 type EventStatus = "on-track" | "at-risk" | "overdue";
+type TaskStatus = "pending" | "in_progress" | "done";
+type TaskPriority = "low" | "medium" | "high";
 
 type EventTask = {
   id: string;
   title: string;
   assignee_name: string | null;
   due_date: string | null;
-  status: "pending" | "in_progress" | "done";
+  status: TaskStatus;
+};
+
+type TaskDetail = {
+  id: string;
+  event_id: string | null;
+  title: string;
+  description: string | null;
+  assigned_to: string | null;
+  status: TaskStatus;
+  due_date: string | null;
+  priority: TaskPriority;
 };
 
 type EventMember = {
@@ -71,6 +84,7 @@ type EventPayload = {
 type ApiResponse = {
   success: boolean;
   event?: EventPayload;
+  task?: TaskDetail;
   chat_message?: EventMessage;
   messages?: EventMessage[];
   message_ids?: string[];
@@ -155,6 +169,13 @@ const formatTaskDue = (value: string | null): string => {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 
+const toDateInputValue = (value: string | null): string => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+};
+
 const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
   const total = tasks.filter((task) => task.assignee_name === memberName).length;
   const done = tasks.filter((task) => task.assignee_name === memberName && task.status === "done").length;
@@ -176,6 +197,17 @@ export default function EventOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [eventData, setEventData] = useState<EventPayload | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [taskDraft, setTaskDraft] = useState<{
+    title: string;
+    description: string;
+    assigned_to: string;
+    due_date: string;
+    priority: TaskPriority;
+    status: TaskStatus;
+  } | null>(null);
+  const [taskSaving, setTaskSaving] = useState(false);
+  const [taskError, setTaskError] = useState("");
   const socketRef = useRef<Socket | null>(null);
 
   const allTasks = useMemo(() => {
@@ -217,6 +249,142 @@ export default function EventOverviewPage() {
     setTab(nextTab);
     const query = nextTab === "Overview" ? "" : `?tab=${encodeURIComponent(nextTab)}`;
     router.replace(`/dashboard/event/${eventId}${query}`);
+  };
+
+  const createDraftFromTask = (task: TaskDetail) => ({
+    title: task.title || "",
+    description: task.description || "",
+    assigned_to: task.assigned_to || "",
+    due_date: toDateInputValue(task.due_date),
+    priority: task.priority || "medium",
+    status: task.status || "pending",
+  });
+
+  const openTaskDetail = async (taskId: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) {
+      setTaskError("Please log in again.");
+      return;
+    }
+
+    setTaskError("");
+    setSelectedTaskId(taskId);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data: ApiResponse = await response.json();
+      if (!response.ok || !data.success || !data.task) {
+        throw new Error(data.message || "Failed to load task details.");
+      }
+      setTaskDraft(createDraftFromTask(data.task));
+    } catch (err) {
+      setTaskError(err instanceof Error ? err.message : "Failed to load task details.");
+    }
+  };
+
+  const startCreateTask = (status: TaskStatus) => {
+    setTaskError("");
+    setSelectedTaskId(null);
+    setTaskDraft({
+      title: "",
+      description: "",
+      assigned_to: "",
+      due_date: "",
+      priority: "medium",
+      status,
+    });
+  };
+
+  const closeTaskPanel = () => {
+    setSelectedTaskId(null);
+    setTaskDraft(null);
+    setTaskError("");
+  };
+
+  const saveTask = async () => {
+    if (!eventData || !taskDraft) return;
+    if (!taskDraft.title.trim()) {
+      setTaskError("Task title is required.");
+      return;
+    }
+
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) {
+      setTaskError("Please log in again.");
+      return;
+    }
+
+    setTaskSaving(true);
+    setTaskError("");
+
+    const payload = {
+      event_id: eventData.id,
+      title: taskDraft.title.trim(),
+      description: taskDraft.description || null,
+      assigned_to: taskDraft.assigned_to || null,
+      due_date: taskDraft.due_date || null,
+      priority: taskDraft.priority,
+      status: taskDraft.status,
+    };
+
+    try {
+      const endpoint = selectedTaskId ? `${API_BASE_URL}/tasks/${selectedTaskId}` : `${API_BASE_URL}/tasks`;
+      const method = selectedTaskId ? "PUT" : "POST";
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data: ApiResponse = await response.json();
+      if (!response.ok || !data.success || !data.task) {
+        throw new Error(data.message || "Failed to save task.");
+      }
+
+      await loadEvent();
+      setSelectedTaskId(data.task.id);
+      setTaskDraft(createDraftFromTask(data.task));
+    } catch (err) {
+      setTaskError(err instanceof Error ? err.message : "Failed to save task.");
+    } finally {
+      setTaskSaving(false);
+    }
+  };
+
+  const deleteTask = async () => {
+    if (!selectedTaskId) return;
+
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) {
+      setTaskError("Please log in again.");
+      return;
+    }
+
+    setTaskSaving(true);
+    setTaskError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/tasks/${selectedTaskId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data: ApiResponse = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to delete task.");
+      }
+
+      await loadEvent();
+      closeTaskPanel();
+    } catch (err) {
+      setTaskError(err instanceof Error ? err.message : "Failed to delete task.");
+    } finally {
+      setTaskSaving(false);
+    }
   };
 
   const loadEvent = async () => {
@@ -713,7 +881,9 @@ export default function EventOverviewPage() {
 
         {tab === "Tasks" && (
           <div style={{ padding: "24px 32px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+            {taskError && <p style={{ color: "var(--overdue)", marginBottom: 12, fontSize: "0.8rem" }}>{taskError}</p>}
+            <div style={{ display: "grid", gridTemplateColumns: taskDraft ? "1fr 320px" : "1fr", gap: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
               {[
                 { col: "To Do", key: "todo" as const, color: "var(--text-3)" },
                 { col: "In Progress", key: "inProgress" as const, color: "var(--at-risk)" },
@@ -738,7 +908,17 @@ export default function EventOverviewPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {eventData.tasks[key].map((task) => (
-                      <div key={task.id} className="card card-hover" style={{ padding: "12px 14px", cursor: "pointer" }}>
+                      <div
+                        key={task.id}
+                        className="card card-hover"
+                        onClick={() => void openTaskDetail(task.id)}
+                        style={{
+                          padding: "12px 14px",
+                          cursor: "pointer",
+                          border: selectedTaskId === task.id ? "1px solid var(--accent)" : "1px solid var(--border)",
+                          background: selectedTaskId === task.id ? "rgba(124,92,252,0.06)" : "var(--surface)",
+                        }}
+                      >
                         <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-1)", marginBottom: 8 }}>{task.title}</p>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <span style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{task.assignee_name || "Unassigned"}</span>
@@ -751,11 +931,139 @@ export default function EventOverviewPage() {
                     {eventData.tasks[key].length === 0 && (
                       <div className="card" style={{ padding: "12px 14px", borderStyle: "dashed" }}>
                         <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-3)" }}>No tasks in this column.</p>
+                        <button
+                          type="button"
+                          onClick={() => startCreateTask(key === "todo" ? "pending" : key === "inProgress" ? "in_progress" : "done")}
+                          style={{
+                            display: "inline-flex",
+                            marginTop: 8,
+                            fontSize: "0.78rem",
+                            color: "var(--accent)",
+                            textDecoration: "none",
+                            fontWeight: 600,
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            cursor: "pointer",
+                          }}
+                        >
+                          + Add task
+                        </button>
                       </div>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => startCreateTask(key === "todo" ? "pending" : key === "inProgress" ? "in_progress" : "done")}
+                      style={{
+                        width: "100%",
+                        padding: "8px",
+                        background: "none",
+                        border: "1px dashed var(--border)",
+                        borderRadius: 10,
+                        color: "var(--text-3)",
+                        fontSize: "0.75rem",
+                        cursor: "pointer",
+                      }}
+                    >
+                      + Add task
+                    </button>
                   </div>
                 </div>
               ))}
+              </div>
+
+              {taskDraft && (
+                <div className="card" style={{ padding: 20, height: "fit-content", position: "sticky", top: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
+                    <h3 style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: "0.95rem", color: "var(--text-1)" }}>
+                      Task Detail
+                    </h3>
+                    <button onClick={closeTaskPanel} style={{ background: "none", border: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 18 }}>
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: "0.8rem" }}>
+                    <div>
+                      <p style={{ color: "var(--text-3)", marginBottom: 4 }}>Title</p>
+                      <input className="input" value={taskDraft.title} onChange={(e) => setTaskDraft((prev) => (prev ? { ...prev, title: e.target.value } : prev))} />
+                    </div>
+
+                    <div>
+                      <p style={{ color: "var(--text-3)", marginBottom: 4 }}>Description</p>
+                      <textarea className="input" rows={3} value={taskDraft.description} onChange={(e) => setTaskDraft((prev) => (prev ? { ...prev, description: e.target.value } : prev))} />
+                    </div>
+
+                    <div>
+                      <p style={{ color: "var(--text-3)", marginBottom: 4 }}>Assigned To</p>
+                      <select className="input" value={taskDraft.assigned_to} onChange={(e) => setTaskDraft((prev) => (prev ? { ...prev, assigned_to: e.target.value } : prev))}>
+                        <option value="">Unassigned</option>
+                        {eventData.members.map((member) => (
+                          <option key={member.user_id} value={member.user_id}>
+                            {member.name} ({member.role})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div>
+                        <p style={{ color: "var(--text-3)", marginBottom: 4 }}>Due Date</p>
+                        <input className="input" type="date" value={taskDraft.due_date} onChange={(e) => setTaskDraft((prev) => (prev ? { ...prev, due_date: e.target.value } : prev))} />
+                      </div>
+                      <div>
+                        <p style={{ color: "var(--text-3)", marginBottom: 4 }}>Priority</p>
+                        <select className="input" value={taskDraft.priority} onChange={(e) => setTaskDraft((prev) => (prev ? { ...prev, priority: e.target.value as TaskPriority } : prev))}>
+                          <option value="low">low</option>
+                          <option value="medium">medium</option>
+                          <option value="high">high</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+                      <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>
+                        Status
+                      </p>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                        {[
+                          { label: "To Do", value: "pending" as TaskStatus },
+                          { label: "In Progress", value: "in_progress" as TaskStatus },
+                          { label: "Done", value: "done" as TaskStatus },
+                        ].map((s) => (
+                          <button
+                            key={s.value}
+                            onClick={() => setTaskDraft((prev) => (prev ? { ...prev, status: s.value } : prev))}
+                            style={{
+                              padding: "7px",
+                              borderRadius: 8,
+                              border: "1px solid var(--border)",
+                              background: taskDraft.status === s.value ? "rgba(124,92,252,0.15)" : "transparent",
+                              color: taskDraft.status === s.value ? "var(--accent)" : "var(--text-3)",
+                              fontSize: "0.72rem",
+                              fontWeight: 500,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+                    <button className="btn-primary text-sm" style={{ flex: 1, padding: "10px" }} onClick={() => void saveTask()} disabled={taskSaving}>
+                      {taskSaving ? "Saving..." : "Save Task"}
+                    </button>
+                    {selectedTaskId && (
+                      <button className="btn-ghost text-sm" style={{ padding: "10px 12px" }} onClick={() => void deleteTask()} disabled={taskSaving}>
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
