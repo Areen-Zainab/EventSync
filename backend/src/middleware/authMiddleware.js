@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 
+const verifyBearerToken = (token) => jwt.verify(token, process.env.JWT_SECRET);
+
 const protect = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
@@ -10,7 +12,7 @@ const protect = (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyBearerToken(token);
     req.user = decoded; // { id, email, role }
     next();
   } catch (err) {
@@ -18,4 +20,4 @@ const protect = (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+module.exports = { protect, verifyBearerToken };

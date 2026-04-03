@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { io, type Socket } from "socket.io-client";
 
 type EventStatus = "on-track" | "at-risk" | "overdue";
 
@@ -26,7 +27,20 @@ type EventMessage = {
   message: string;
   mine: boolean;
   time: string;
+  event_id?: string;
+  created_at?: string;
   sender: { name: string } | null;
+  parent_message_id?: string | null;
+  is_pinned?: boolean;
+  mention_user_ids?: string[];
+  read_count?: number;
+  read_by_me?: boolean;
+  attachment?: {
+    url?: string | null;
+    name?: string | null;
+    mime?: string | null;
+    size?: number;
+  } | null;
 };
 
 type EventPayload = {
@@ -57,10 +71,14 @@ type EventPayload = {
 type ApiResponse = {
   success: boolean;
   event?: EventPayload;
+  chat_message?: EventMessage;
+  messages?: EventMessage[];
+  message_ids?: string[];
   message?: string;
 };
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+const SOCKET_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, "");
 const tabs = ["Overview", "Chat", "Tasks", "Members"] as const;
 
 function StatusBadge({ status }: { status: EventStatus }) {
@@ -149,9 +167,14 @@ export default function EventOverviewPage() {
 
   const [tab, setTab] = useState<(typeof tabs)[number]>("Overview");
   const [chatMsg, setChatMsg] = useState("");
+  const [replyTo, setReplyTo] = useState<EventMessage | null>(null);
+  const [mentionNotice, setMentionNotice] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [eventData, setEventData] = useState<EventPayload | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const allTasks = useMemo(() => {
     if (!eventData) return [] as EventTask[];
@@ -198,6 +221,140 @@ export default function EventOverviewPage() {
   useEffect(() => {
     void loadEvent();
   }, [eventId]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) return;
+
+    const socket = io(SOCKET_BASE_URL, {
+      auth: { token },
+      transports: ["websocket"],
+    });
+    socketRef.current = socket;
+
+    socket.emit("chat:joinRoom", { eventId });
+    socket.on("chat:newMessage", (message: EventMessage) => {
+      setEventData((prev) =>
+        prev
+          ? {
+              ...prev,
+              messages: prev.messages.some((m) => m.id === message.id) ? prev.messages : [...prev.messages, message],
+            }
+          : prev
+      );
+    });
+    socket.on("chat:messagePinned", (message: EventMessage) => {
+      setEventData((prev) =>
+        prev
+          ? {
+              ...prev,
+              messages: prev.messages.map((m) => (m.id === message.id ? { ...m, ...message } : m)),
+            }
+          : prev
+      );
+    });
+    socket.on("chat:messageRead", ({ message_ids }: { message_ids: string[] }) => {
+      setEventData((prev) =>
+        prev
+          ? {
+              ...prev,
+              messages: prev.messages.map((m) =>
+                message_ids.includes(m.id) ? { ...m, read_count: (m.read_count || 0) + 1, read_by_me: true } : m
+              ),
+            }
+          : prev
+      );
+    });
+    socket.on("chat:mentionPing", (payload: Array<{ target_user_id: string; message_id: string }>) => {
+      if (!Array.isArray(payload) || payload.length === 0) return;
+      const me = localStorage.getItem("eventsync_user_id");
+      const mention = me ? payload.find((p) => p.target_user_id === me) : payload[0];
+      if (mention) {
+        setMentionNotice(`You were mentioned in a message.`);
+        window.setTimeout(() => setMentionNotice(""), 2500);
+      }
+    });
+
+    return () => {
+      socket.emit("chat:leaveRoom", { eventId });
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [eventId]);
+
+  const sendMessage = async () => {
+    if (!eventId || (!chatMsg.trim() && !selectedFile) || sending) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) return;
+    setSending(true);
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.append("message", chatMsg.trim() || (selectedFile ? `Shared file: ${selectedFile.name}` : ""));
+      if (replyTo?.id) formData.append("parent_message_id", replyTo.id);
+      if (selectedFile) formData.append("attachment", selectedFile);
+
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}/messages`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data: ApiResponse = await response.json();
+      if (!response.ok || !data.success || !data.chat_message) {
+        throw new Error(data.message || "Failed to send message.");
+      }
+      setEventData((prev) =>
+        prev
+          ? {
+              ...prev,
+              messages: prev.messages.some((m) => m.id === data.chat_message!.id)
+                ? prev.messages
+                : [...prev.messages, data.chat_message as EventMessage],
+            }
+          : prev
+      );
+      setChatMsg("");
+      setReplyTo(null);
+      setSelectedFile(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send message.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const togglePin = async (messageId: string) => {
+    if (!eventId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) return;
+    const response = await fetch(`${API_BASE_URL}/events/${eventId}/messages/${messageId}/pin`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data: ApiResponse = await response.json();
+    if (response.ok && data.success && data.chat_message) {
+      setEventData((prev) =>
+        prev
+          ? {
+              ...prev,
+              messages: prev.messages.map((m) => (m.id === data.chat_message!.id ? { ...m, ...data.chat_message } : m)),
+            }
+          : prev
+      );
+    }
+  };
+
+  const markRead = async (messageId: string) => {
+    if (!eventId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) return;
+    await fetch(`${API_BASE_URL}/events/${eventId}/messages/read`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ message_ids: [messageId] }),
+    });
+  };
 
   if (loading) {
     return <div style={{ padding: "28px 32px", color: "var(--text-3)" }}>Loading event...</div>;
@@ -418,6 +575,9 @@ export default function EventOverviewPage() {
 
         {tab === "Chat" && (
           <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {mentionNotice && (
+              <div style={{ margin: "12px 24px 0", fontSize: "0.8rem", color: "var(--accent)" }}>{mentionNotice}</div>
+            )}
             <div style={{ flex: 1, overflow: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
               {eventData.messages.length === 0 && (
                 <p style={{ color: "var(--text-3)", fontSize: "0.85rem" }}>No messages yet for this event.</p>
@@ -428,8 +588,32 @@ export default function EventOverviewPage() {
                   style={{ display: "flex", flexDirection: "column", alignItems: m.mine ? "flex-end" : "flex-start", gap: 3 }}
                 >
                   {!m.mine && <span style={{ fontSize: "0.72rem", color: "var(--text-3)", paddingLeft: 4 }}>{m.sender?.name || "Member"}</span>}
-                  <div className={`chat-bubble ${m.mine ? "mine" : "theirs"}`}>{m.message}</div>
-                  <span style={{ fontSize: "0.65rem", color: "var(--text-3)" }}>{m.time}</span>
+                  <div
+                    className={`chat-bubble ${m.mine ? "mine" : "theirs"}`}
+                    style={{ marginLeft: m.parent_message_id ? 16 : 0, border: m.is_pinned ? "1px solid var(--accent)" : undefined }}
+                  >
+                    {m.is_pinned ? "📌 " : ""}
+                    {m.message}
+                    {m.attachment?.url && (
+                      <div style={{ marginTop: 8 }}>
+                        <a href={`${SOCKET_BASE_URL}${m.attachment.url}`} target="_blank" rel="noreferrer" style={{ color: "inherit", textDecoration: "underline" }}>
+                          {m.attachment.name || "Attachment"}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span style={{ fontSize: "0.65rem", color: "var(--text-3)" }}>{m.time}</span>
+                    <button onClick={() => setReplyTo(m)} style={{ border: "none", background: "transparent", color: "var(--text-3)", fontSize: "0.7rem", cursor: "pointer" }}>
+                      Reply
+                    </button>
+                    <button onClick={() => void togglePin(m.id)} style={{ border: "none", background: "transparent", color: "var(--text-3)", fontSize: "0.7rem", cursor: "pointer" }}>
+                      {m.is_pinned ? "Unpin" : "Pin"}
+                    </button>
+                    <button onClick={() => void markRead(m.id)} style={{ border: "none", background: "transparent", color: "var(--text-3)", fontSize: "0.7rem", cursor: "pointer" }}>
+                      Seen {m.read_count || 0}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -447,14 +631,34 @@ export default function EventOverviewPage() {
               <input
                 className="input"
                 style={{ flex: 1, borderRadius: 24 }}
-                placeholder="Messages are read-only for now"
+                placeholder="Write a message... use @name to mention"
                 value={chatMsg}
                 onChange={(e) => setChatMsg(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void sendMessage();
+                  }
+                }}
               />
-              <button className="btn-primary px-4 py-2 text-sm" style={{ flexShrink: 0 }} disabled>
-                Send
+              <input
+                type="file"
+                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                style={{ maxWidth: 220, fontSize: "0.75rem" }}
+              />
+              <button className="btn-primary px-4 py-2 text-sm" style={{ flexShrink: 0 }} disabled={sending || (!chatMsg.trim() && !selectedFile)} onClick={() => void sendMessage()}>
+                {sending ? "Sending..." : "Send"}
               </button>
             </div>
+            {replyTo && (
+              <div style={{ fontSize: "0.75rem", color: "var(--text-3)", padding: "0 24px 12px" }}>
+                Replying to: {replyTo.message.slice(0, 50)}
+                <button onClick={() => setReplyTo(null)} style={{ marginLeft: 8, border: "none", background: "transparent", color: "var(--accent)", cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            )}
+            {selectedFile && <div style={{ fontSize: "0.75rem", color: "var(--text-3)", padding: "0 24px 12px" }}>Attachment: {selectedFile.name}</div>}
           </div>
         )}
 

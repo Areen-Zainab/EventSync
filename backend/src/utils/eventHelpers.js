@@ -154,6 +154,19 @@ const sanitizeMessageRow = (row, currentUserId = null) => ({
   event_id: row.event_id,
   message: row.message,
   is_pinned: Boolean(row.is_pinned),
+  parent_message_id: row.parent_message_id || null,
+  mention_user_ids: Array.isArray(row.mention_user_ids) ? row.mention_user_ids : [],
+  attachment: row.attachment_path
+    ? {
+        path: row.attachment_path,
+        name: row.attachment_name || null,
+        mime: row.attachment_mime || null,
+        size: Number(row.attachment_size || 0),
+        url: row.attachment_path,
+      }
+    : null,
+  read_count: Number(row.read_count || 0),
+  read_by_me: Boolean(row.read_by_me),
   sender: row.user_id
     ? {
         id: row.user_id,

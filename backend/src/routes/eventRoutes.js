@@ -12,8 +12,11 @@ const {
 	removeEventMember,
 	getEventMessages,
 	sendEventMessage,
+	pinEventMessage,
+	markMessagesAsRead,
 } = require('../controllers/eventModuleController');
 const { protect } = require('../middleware/authMiddleware');
+const { uploadChatAttachment } = require('../middleware/chatUploadMiddleware');
 
 router.use(protect); // all event routes require auth
 
@@ -29,6 +32,8 @@ router.patch('/:id/members/:memberId', updateEventMember);
 router.delete('/:id/members/:memberId', removeEventMember);
 
 router.get('/:id/messages', getEventMessages);
-router.post('/:id/messages', sendEventMessage);
+router.post('/:id/messages', uploadChatAttachment.single('attachment'), sendEventMessage);
+router.patch('/:id/messages/:messageId/pin', pinEventMessage);
+router.post('/:id/messages/read', markMessagesAsRead);
 
 module.exports = router;
