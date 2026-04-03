@@ -3,8 +3,6 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api";
-import { connectSocket } from "@/lib/socket";
 
 type EventStatus = "on-track" | "at-risk" | "overdue";
 
@@ -28,7 +26,6 @@ type EventMessage = {
   message: string;
   mine: boolean;
   time: string;
-  read_by_count?: number;
   sender: { name: string } | null;
 };
 
@@ -155,7 +152,6 @@ export default function EventOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [eventData, setEventData] = useState<EventPayload | null>(null);
-  const [unreadMentions, setUnreadMentions] = useState(0);
 
   const allTasks = useMemo(() => {
     if (!eventData) return [] as EventTask[];
@@ -199,50 +195,8 @@ export default function EventOverviewPage() {
     }
   };
 
-  const loadUnreadMentions = async () => {
-    if (!eventId) return;
-    try {
-      const data = await apiFetch<{ unread_count: number }>(`/events/${eventId}/mentions/unread`);
-      setUnreadMentions(data.unread_count || 0);
-    } catch {
-      setUnreadMentions(0);
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!eventId || !chatMsg.trim()) return;
-    try {
-      await apiFetch(`/events/${eventId}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ message: chatMsg }),
-      });
-      setChatMsg("");
-      await loadEvent();
-      await loadUnreadMentions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send message.");
-    }
-  };
-
   useEffect(() => {
     void loadEvent();
-    void loadUnreadMentions();
-  }, [eventId]);
-
-  useEffect(() => {
-    if (!eventId) return;
-    const socket = connectSocket();
-    socket.emit("join_event", { eventId });
-    socket.on("message_created", ({ eventId: incomingEventId }) => {
-      if (incomingEventId === eventId) {
-        void loadEvent();
-        void loadUnreadMentions();
-      }
-    });
-    return () => {
-      socket.emit("leave_event", { eventId });
-      socket.off("message_created");
-    };
   }, [eventId]);
 
   if (loading) {
@@ -309,7 +263,7 @@ export default function EventOverviewPage() {
       </div>
 
       <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "0 32px", display: "flex", gap: 0, flexShrink: 0 }}>
-            {tabs.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -325,7 +279,7 @@ export default function EventOverviewPage() {
               transition: "color 0.15s",
             }}
           >
-            {t === "Chat" && unreadMentions > 0 ? `${t} (${unreadMentions})` : t}
+            {t}
           </button>
         ))}
       </div>
@@ -475,7 +429,7 @@ export default function EventOverviewPage() {
                 >
                   {!m.mine && <span style={{ fontSize: "0.72rem", color: "var(--text-3)", paddingLeft: 4 }}>{m.sender?.name || "Member"}</span>}
                   <div className={`chat-bubble ${m.mine ? "mine" : "theirs"}`}>{m.message}</div>
-                  <span style={{ fontSize: "0.65rem", color: "var(--text-3)" }}>{m.time} {m.read_by_count ? `· Seen by ${m.read_by_count}` : ""}</span>
+                  <span style={{ fontSize: "0.65rem", color: "var(--text-3)" }}>{m.time}</span>
                 </div>
               ))}
             </div>
@@ -493,11 +447,11 @@ export default function EventOverviewPage() {
               <input
                 className="input"
                 style={{ flex: 1, borderRadius: 24 }}
-                placeholder="Message this event room... use @name to mention"
+                placeholder="Messages are read-only for now"
                 value={chatMsg}
                 onChange={(e) => setChatMsg(e.target.value)}
               />
-              <button className="btn-primary px-4 py-2 text-sm" style={{ flexShrink: 0 }} onClick={() => void sendMessage()}>
+              <button className="btn-primary px-4 py-2 text-sm" style={{ flexShrink: 0 }} disabled>
                 Send
               </button>
             </div>
