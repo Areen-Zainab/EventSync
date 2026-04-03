@@ -3,15 +3,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: "⊞" },
-  { label: "My Events", href: "/dashboard/events", icon: "📅" },
-  { label: "Tasks", href: "/dashboard/tasks", icon: "✅" },
-  { label: "Chat", href: "/dashboard/chat", icon: "💬" },
-  { label: "Notifications", href: "/dashboard/notifications", icon: "🔔" },
-  { label: "Team", href: "/dashboard/team", icon: "👥" },
-];
-
 const bottomItems = [
   { label: "Settings", href: "/dashboard/settings", icon: "⚙" },
 ];
@@ -19,6 +10,33 @@ const bottomItems = [
 export default function Sidebar() {
   const path = usePathname();
   const [account, setAccount] = useState({ name: "Your account", role: "Organizer", initials: "A" });
+
+  const eventMatch = path.match(/^\/dashboard\/event\/([^/]+)/);
+  const activeEventId = eventMatch?.[1] || null;
+  const isEventContext = Boolean(activeEventId);
+
+  const navItems = isEventContext
+    ? [
+        { label: "My Events", href: "/dashboard/events", icon: "📅" },
+        { label: "Chat", href: `/dashboard/event/${activeEventId}?tab=Chat`, icon: "💬" },
+        { label: "Tasks", href: `/dashboard/event/${activeEventId}?tab=Tasks`, icon: "✅" },
+        { label: "Notifications", href: "/dashboard/notifications", icon: "🔔" },
+        { label: "Team", href: `/dashboard/event/${activeEventId}?tab=Members`, icon: "👥" },
+      ]
+    : [
+        { label: "My Events", href: "/dashboard/events", icon: "📅" },
+        { label: "Notifications", href: "/dashboard/notifications", icon: "🔔" },
+      ];
+
+  const isItemActive = (href: string): boolean => {
+    if (href.startsWith("/dashboard/event/")) {
+      return path.startsWith("/dashboard/event/");
+    }
+    if (href === "/dashboard/events") {
+      return path === "/dashboard" || path.startsWith("/dashboard/events");
+    }
+    return path === href;
+  };
 
   useEffect(() => {
     const loadAccount = () => {
@@ -66,7 +84,7 @@ export default function Sidebar() {
           <Link
             key={item.label}
             href={item.href}
-            className={`sidebar-link${path === item.href ? ' active' : ''}`}
+            className={`sidebar-link${isItemActive(item.href) ? ' active' : ''}`}
           >
             <span style={{ fontSize: 15 }}>{item.icon}</span>
             {item.label}

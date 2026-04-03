@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 type EventStatus = "on-track" | "at-risk" | "overdue";
@@ -145,6 +145,7 @@ const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
 
 export default function EventOverviewPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const eventId = params?.id;
 
   const [tab, setTab] = useState<(typeof tabs)[number]>("Overview");
@@ -152,6 +153,14 @@ export default function EventOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [eventData, setEventData] = useState<EventPayload | null>(null);
+
+  const tabFromQuery = useMemo(() => {
+    const raw = (searchParams.get("tab") || "").toLowerCase();
+    if (raw === "chat") return "Chat";
+    if (raw === "tasks") return "Tasks";
+    if (raw === "members" || raw === "team") return "Members";
+    return "Overview";
+  }, [searchParams]);
 
   const allTasks = useMemo(() => {
     if (!eventData) return [] as EventTask[];
@@ -198,6 +207,10 @@ export default function EventOverviewPage() {
   useEffect(() => {
     void loadEvent();
   }, [eventId]);
+
+  useEffect(() => {
+    setTab(tabFromQuery);
+  }, [tabFromQuery]);
 
   if (loading) {
     return <div style={{ padding: "28px 32px", color: "var(--text-3)" }}>Loading event...</div>;
