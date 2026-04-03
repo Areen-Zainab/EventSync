@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { connectSocket } from "@/lib/socket";
@@ -148,7 +148,6 @@ const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
 
 export default function EventOverviewPage() {
   const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
   const eventId = params?.id;
 
   const [tab, setTab] = useState<(typeof tabs)[number]>("Overview");
@@ -158,37 +157,10 @@ export default function EventOverviewPage() {
   const [eventData, setEventData] = useState<EventPayload | null>(null);
   const [unreadMentions, setUnreadMentions] = useState(0);
 
-  const currentUserId = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = localStorage.getItem("eventsync_user");
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { id?: string };
-      return parsed.id || null;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const tabFromQuery = useMemo(() => {
-    const raw = (searchParams.get("tab") || "").toLowerCase();
-    if (raw === "chat") return "Chat";
-    if (raw === "tasks") return "Tasks";
-    if (raw === "members" || raw === "team") return "Members";
-    return "Overview";
-  }, [searchParams]);
-
   const allTasks = useMemo(() => {
     if (!eventData) return [] as EventTask[];
     return [...eventData.tasks.todo, ...eventData.tasks.inProgress, ...eventData.tasks.done];
   }, [eventData]);
-
-  const canEditEvent = useMemo(() => {
-    if (!eventData || !currentUserId) return false;
-    const me = eventData.members.find((member) => member.user_id === currentUserId);
-    if (!me) return false;
-    return me.role !== "Member";
-  }, [eventData, currentUserId]);
 
   const loadEvent = async () => {
     if (!eventId) {
@@ -273,10 +245,6 @@ export default function EventOverviewPage() {
     };
   }, [eventId]);
 
-  useEffect(() => {
-    setTab(tabFromQuery);
-  }, [tabFromQuery]);
-
   if (loading) {
     return <div style={{ padding: "28px 32px", color: "var(--text-3)" }}>Loading event...</div>;
   }
@@ -329,25 +297,13 @@ export default function EventOverviewPage() {
                 {daysLeft >= 0 ? `${daysLeft} days left` : `${Math.abs(daysLeft)} days overdue`}
               </span>
             )}
-            {canEditEvent ? (
-              <Link
-                href={`/dashboard/event/${eventData.id}/edit`}
-                className="btn-ghost px-3 py-1.5 text-xs"
-                style={{ padding: "6px 12px", textDecoration: "none" }}
-              >
-                ⚙ Edit Event
-              </Link>
-            ) : (
-              <button
-                type="button"
-                className="btn-ghost px-3 py-1.5 text-xs"
-                style={{ padding: "6px 12px", opacity: 0.6, cursor: "not-allowed" }}
-                title="Members cannot edit event details"
-                disabled
-              >
-                ⚙ Edit Event
-              </button>
-            )}
+            <Link
+              href={`/dashboard/event/${eventData.id}/edit`}
+              className="btn-ghost px-3 py-1.5 text-xs"
+              style={{ padding: "6px 12px", textDecoration: "none" }}
+            >
+              ⚙ Edit Event
+            </Link>
           </div>
         </div>
       </div>
