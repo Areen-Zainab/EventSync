@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const path = require('path');
 const {
   VALID_MEMBER_ROLES,
   withTransaction,
@@ -9,6 +10,18 @@ const {
   sanitizeMessageRow,
   buildActivityEntry,
 } = require('../utils/eventHelpers');
+const {
+  hasEventAccess: hasEventChatAccess,
+  canManagePins,
+  hydrateMessageRows,
+  createMessage,
+  setMessagePinned,
+  markEventRead,
+  getUnreadMentionsCount,
+  markMentionsRead,
+} = require('../services/chatService');
+const { getIO } = require('../realtime/socketState');
+const { eventRoom } = require('../realtime/socketServer');
 
 const VALID_TASK_STATUSES = new Set(['pending', 'in_progress', 'done']);
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high']);
@@ -613,12 +626,12 @@ const removeEventMember = async (req, res, next) => {
 const getEventMessages = async (req, res, next) => {
   try {
     const eventId = req.params.id;
-    const allowed = await hasEventAccess(query, req.user.id, eventId);
+    const allowed = await hasEventChatAccess(req.user.id, eventId);
     if (!allowed) {
       return res.status(404).json({ success: false, message: 'Event not found.' });
     }
 
-    const messages = await loadEventMessageRows(query, eventId, req.user.id);
+    const messages = await hydrateMessageRows(eventId, req.user.id);
     return res.json({ success: true, messages });
   } catch (err) {
     next(err);
@@ -629,35 +642,173 @@ const getEventMessages = async (req, res, next) => {
 const sendEventMessage = async (req, res, next) => {
   try {
     const eventId = req.params.id;
-    const allowed = await hasEventAccess(query, req.user.id, eventId);
+    const allowed = await hasEventChatAccess(req.user.id, eventId);
     if (!allowed) {
       return res.status(404).json({ success: false, message: 'Event not found.' });
     }
 
-    const { message } = req.body;
-    if (!message || !String(message).trim()) {
-      return res.status(400).json({ success: false, message: 'Message is required.' });
+    const { message, parent_message_id: parentMessageId } = req.body;
+    const row = await createMessage({ eventId, userId: req.user.id, message, parentMessageId });
+    const messagePayload = {
+      ...sanitizeMessageRow(row, req.user.id),
+      parent_message_id: row.parent_message_id || null,
+      thread_reply_count: 0,
+      attachment_count: 0,
+      attachments: [],
+      mentions: row.mentions || [],
+      read_by_count: 1,
+    };
+
+    const io = getIO();
+    if (io) {
+      io.to(eventRoom(eventId)).emit('message_created', { eventId, message: messagePayload });
     }
 
-    const result = await query(
-      `INSERT INTO event_messages (event_id, user_id, message)
-       VALUES ($1, $2, $3)
-       RETURNING id, event_id, user_id, message, created_at, updated_at, is_pinned, deleted_at`,
-      [eventId, req.user.id, String(message).trim()]
-    );
-
-    const senderResult = await query('SELECT name, email FROM users WHERE id = $1', [req.user.id]);
-    const row = result.rows[0];
-    const messagePayload = sanitizeMessageRow(
-      {
-        ...row,
-        sender_name: senderResult.rows[0]?.name || null,
-        sender_email: senderResult.rows[0]?.email || null,
-      },
-      req.user.id
-    );
-
     return res.status(201).json({ success: true, chat_message: messagePayload });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/events/:id/messages/:messageId/attachments
+const uploadMessageAttachments = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const { messageId } = req.params;
+    const files = req.files || [];
+    const allowed = await hasEventChatAccess(req.user.id, eventId);
+    if (!allowed) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+    if (!files.length) {
+      return res.status(400).json({ success: false, message: 'At least one attachment is required.' });
+    }
+
+    const messageCheck = await query(
+      `SELECT id FROM event_messages
+       WHERE id = $1 AND event_id = $2 AND deleted_at IS NULL`,
+      [messageId, eventId]
+    );
+    if (!messageCheck.rows.length) {
+      return res.status(404).json({ success: false, message: 'Message not found.' });
+    }
+
+    const inserted = [];
+    for (const file of files) {
+      const relativeUrl = `/uploads/chat/${eventId}/${path.basename(file.filename)}`;
+      const result = await query(
+        `INSERT INTO message_attachments
+          (message_id, event_id, uploaded_by, original_name, stored_name, mime_type, size_bytes, url_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, original_name, mime_type, size_bytes, url_path, created_at`,
+        [messageId, eventId, req.user.id, file.originalname, file.filename, file.mimetype, file.size, relativeUrl]
+      );
+      inserted.push(result.rows[0]);
+    }
+
+    await query(
+      `UPDATE event_messages
+       SET attachment_count = COALESCE(attachment_count, 0) + $1, updated_at = NOW()
+       WHERE id = $2`,
+      [inserted.length, messageId]
+    );
+
+    return res.status(201).json({ success: true, attachments: inserted });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/events/:id/messages/:messageId/pin
+const pinEventMessage = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const { messageId } = req.params;
+    const { pinned } = req.body;
+    const allowed = await hasEventChatAccess(req.user.id, eventId);
+    if (!allowed) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+
+    const canPin = await canManagePins(req.user.id, eventId);
+    if (!canPin) {
+      return res.status(403).json({ success: false, message: 'Only organizers/coordinators can pin messages.' });
+    }
+
+    const updated = await setMessagePinned({ eventId, messageId, pinned: Boolean(pinned) });
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Message not found.' });
+    }
+
+    const io = getIO();
+    if (io) {
+      io.to(eventRoom(eventId)).emit('message_pinned', {
+        eventId,
+        message_id: updated.id,
+        is_pinned: updated.is_pinned,
+      });
+    }
+
+    return res.json({ success: true, message_pin: updated });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/events/:id/messages/read
+const markEventMessagesRead = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const allowed = await hasEventChatAccess(req.user.id, eventId);
+    if (!allowed) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+
+    const { message_ids: messageIds = [] } = req.body;
+    const updatedCount = await markEventRead({ eventId, userId: req.user.id, messageIds });
+    await markMentionsRead({ eventId, userId: req.user.id, messageIds });
+
+    const io = getIO();
+    if (io) {
+      io.to(eventRoom(eventId)).emit('message_read', {
+        eventId,
+        user_id: req.user.id,
+        message_ids: messageIds,
+      });
+    }
+
+    return res.json({ success: true, updated_count: updatedCount });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// GET /api/events/:id/mentions/unread
+const getUnreadMentions = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const allowed = await hasEventChatAccess(req.user.id, eventId);
+    if (!allowed) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+    const unread_count = await getUnreadMentionsCount({ eventId, userId: req.user.id });
+    return res.json({ success: true, unread_count });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/events/:id/mentions/read
+const markMentionMessagesRead = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const { message_ids: messageIds = [] } = req.body;
+    const allowed = await hasEventChatAccess(req.user.id, eventId);
+    if (!allowed) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+    const updated_count = await markMentionsRead({ eventId, userId: req.user.id, messageIds });
+    return res.json({ success: true, updated_count });
   } catch (err) {
     next(err);
   }
@@ -675,4 +826,9 @@ module.exports = {
   removeEventMember,
   getEventMessages,
   sendEventMessage,
+  uploadMessageAttachments,
+  pinEventMessage,
+  markEventMessagesRead,
+  getUnreadMentions,
+  markMentionMessagesRead,
 };
