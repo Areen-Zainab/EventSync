@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
@@ -163,6 +163,8 @@ const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
 
 export default function EventOverviewPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const eventId = params?.id;
 
   const [tab, setTab] = useState<(typeof tabs)[number]>("Overview");
@@ -180,6 +182,42 @@ export default function EventOverviewPage() {
     if (!eventData) return [] as EventTask[];
     return [...eventData.tasks.todo, ...eventData.tasks.inProgress, ...eventData.tasks.done];
   }, [eventData]);
+
+  const currentUserId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem("eventsync_user");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { id?: string };
+      return parsed.id || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const canEditEvent = useMemo(() => {
+    if (!eventData || !currentUserId) return false;
+    const me = eventData.members.find((member) => member.user_id === currentUserId);
+    if (!me) return false;
+    return me.role !== "Member";
+  }, [eventData, currentUserId]);
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (!tabParam) {
+      setTab("Overview");
+      return;
+    }
+
+    const matchedTab = tabs.find((t) => t.toLowerCase() === tabParam.toLowerCase());
+    setTab(matchedTab || "Overview");
+  }, [searchParams]);
+
+  const selectTab = (nextTab: (typeof tabs)[number]) => {
+    setTab(nextTab);
+    const query = nextTab === "Overview" ? "" : `?tab=${encodeURIComponent(nextTab)}`;
+    router.replace(`/dashboard/event/${eventId}${query}`);
+  };
 
   const loadEvent = async () => {
     if (!eventId) {
@@ -408,13 +446,24 @@ export default function EventOverviewPage() {
                 {daysLeft >= 0 ? `${daysLeft} days left` : `${Math.abs(daysLeft)} days overdue`}
               </span>
             )}
-            <Link
-              href={`/dashboard/event/${eventData.id}/edit`}
-              className="btn-ghost px-3 py-1.5 text-xs"
-              style={{ padding: "6px 12px", textDecoration: "none" }}
-            >
-              ⚙ Edit Event
-            </Link>
+            {canEditEvent ? (
+              <Link
+                href={`/dashboard/event/${eventData.id}/edit`}
+                className="btn-ghost px-3 py-1.5 text-xs"
+                style={{ padding: "6px 12px", textDecoration: "none" }}
+              >
+                ⚙ Edit Event
+              </Link>
+            ) : (
+              <button
+                className="btn-ghost px-3 py-1.5 text-xs"
+                style={{ padding: "6px 12px", opacity: 0.6, cursor: "not-allowed" }}
+                disabled
+                title="Members cannot edit event details"
+              >
+                ⚙ Edit Event
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -423,7 +472,7 @@ export default function EventOverviewPage() {
         {tabs.map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => selectTab(t)}
             style={{
               padding: "12px 20px",
               fontSize: "0.875rem",
