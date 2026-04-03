@@ -1,16 +1,97 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 const eventTypes = ["Academic", "Social", "Sports", "Cultural"];
 const roles = ["Organizer", "Coordinator", "Member"];
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
 
 export default function NewEventPage() {
+  const router = useRouter();
   const [step, setStep] = useState(1);
   const [type, setType] = useState("Academic");
   const [members, setMembers] = useState([{ email: "", role: "Member" }]);
+  const [name, setName] = useState("");
+  const [date, setDate] = useState("");
+  const [venue, setVenue] = useState("");
+  const [description, setDescription] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const addMember = () => setMembers(m => [...m, { email: "", role: "Member" }]);
+
+  const goToNextStep = () => {
+    if (step === 1) {
+      if (!name.trim()) {
+        setError("Event name is required.");
+        return;
+      }
+      if (!date) {
+        setError("Event date is required.");
+        return;
+      }
+    }
+
+    setError("");
+    setStep(s => Math.min(3, s + 1));
+  };
+
+  const createEvent = async () => {
+    if (!name.trim() || !date) {
+      setError("Please complete event details before creating.");
+      setStep(1);
+      return;
+    }
+
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) {
+      setError("Please log in again to create an event.");
+      return;
+    }
+
+    const cleanedMembers = members
+      .map((member) => ({ email: member.email.trim(), role: member.role }))
+      .filter((member) => member.email.length > 0);
+
+    setIsSubmitting(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/events`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          date,
+          venue: venue.trim() || null,
+          type,
+          description: description.trim() || null,
+          members: cleanedMembers,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to create event.");
+      }
+
+      const eventId = data.event?.id;
+      if (eventId) {
+        router.push(`/dashboard/event/${eventId}`);
+        return;
+      }
+
+      router.push("/dashboard/events");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create event.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div style={{ padding: '32px 36px', maxWidth: 680 }}>
@@ -19,6 +100,7 @@ export default function NewEventPage() {
 
       <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 6 }}>Create New Event</h1>
       <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', marginBottom: 32 }}>Fill in the details to kick off your event workspace.</p>
+      {error && <p style={{ marginBottom: 16, color: 'var(--overdue)', fontSize: '0.825rem', fontWeight: 600 }}>{error}</p>}
 
       {/* Step indicator */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 32 }}>
@@ -38,16 +120,16 @@ export default function NewEventPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Event Name *</label>
-              <input className="input" placeholder="e.g. Annual Tech Symposium 2026" />
+              <input className="input" placeholder="e.g. Annual Tech Symposium 2026" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Date *</label>
-                <input className="input" type="date" />
+                <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Venue</label>
-                <input className="input" placeholder="e.g. Main Auditorium" />
+                <input className="input" placeholder="e.g. Main Auditorium" value={venue} onChange={(e) => setVenue(e.target.value)} />
               </div>
             </div>
             <div>
@@ -60,7 +142,7 @@ export default function NewEventPage() {
             </div>
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Description</label>
-              <textarea className="input" placeholder="What's this event about?" rows={3} style={{ resize: 'vertical' }} />
+              <textarea className="input" placeholder="What's this event about?" rows={3} style={{ resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
           </div>
         )}
@@ -79,7 +161,10 @@ export default function NewEventPage() {
                 </select>
               </div>
             ))}
-            <button onClick={addMember} className="btn-ghost py-2 text-sm" style={{ alignSelf: 'flex-start', padding: '8px 16px' }}>+ Add another</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button onClick={addMember} className="btn-ghost py-2 text-sm" style={{ alignSelf: 'flex-start', padding: '8px 16px' }}>+ Add another</button>
+              <button onClick={() => setStep(3)} className="btn-ghost py-2 text-sm" style={{ alignSelf: 'flex-start', padding: '8px 16px' }}>Skip for now</button>
+            </div>
 
             <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 14, border: '1px solid var(--border)' }}>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginBottom: 8 }}>Or share invite link</p>
@@ -95,11 +180,11 @@ export default function NewEventPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>Review & Create</p>
             {[
-              { label: 'Event Name', value: 'Annual Tech Symposium 2026' },
-              { label: 'Date', value: 'April 15, 2026' },
-              { label: 'Venue', value: 'Main Auditorium' },
+              { label: 'Event Name', value: name || '-' },
+              { label: 'Date', value: date ? new Date(date).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : '-' },
+              { label: 'Venue', value: venue || '-' },
               { label: 'Type', value: type },
-              { label: 'Team', value: `${members.length} member(s) invited` },
+              { label: 'Team', value: `${members.filter((member) => member.email.trim()).length} member(s) invited` },
             ].map(r => (
               <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>{r.label}</span>
@@ -114,8 +199,8 @@ export default function NewEventPage() {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 28 }}>
           <button onClick={() => setStep(s => Math.max(1, s - 1))} className="btn-ghost py-2.5 px-5 text-sm" style={{ visibility: step > 1 ? 'visible' : 'hidden' }}>← Back</button>
-          <button onClick={() => setStep(s => Math.min(3, s + 1))} className="btn-primary py-2.5 px-6 text-sm">
-            {step === 3 ? '🚀 Create Event' : 'Continue →'}
+          <button onClick={step === 3 ? createEvent : goToNextStep} className="btn-primary py-2.5 px-6 text-sm" disabled={isSubmitting} style={{ opacity: isSubmitting ? 0.7 : 1, cursor: isSubmitting ? 'not-allowed' : 'pointer' }}>
+            {step === 3 ? (isSubmitting ? 'Creating...' : '🚀 Create Event') : 'Continue →'}
           </button>
         </div>
       </div>

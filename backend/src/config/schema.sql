@@ -30,7 +30,20 @@ CREATE TABLE IF NOT EXISTS event_members (
   event_id  UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   user_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   role      VARCHAR(20) NOT NULL DEFAULT 'Member',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (event_id, user_id)
+);
+
+-- Event chat messages
+CREATE TABLE IF NOT EXISTS event_messages (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id     UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  user_id      UUID REFERENCES users(id) ON DELETE SET NULL,
+  message      TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_pinned    BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at   TIMESTAMPTZ
 );
 
 -- Tasks
