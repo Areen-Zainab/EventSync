@@ -154,6 +154,18 @@ export default function EventOverviewPage() {
   const [error, setError] = useState("");
   const [eventData, setEventData] = useState<EventPayload | null>(null);
 
+  const currentUserId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem("eventsync_user");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { id?: string };
+      return parsed.id || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const tabFromQuery = useMemo(() => {
     const raw = (searchParams.get("tab") || "").toLowerCase();
     if (raw === "chat") return "Chat";
@@ -166,6 +178,13 @@ export default function EventOverviewPage() {
     if (!eventData) return [] as EventTask[];
     return [...eventData.tasks.todo, ...eventData.tasks.inProgress, ...eventData.tasks.done];
   }, [eventData]);
+
+  const canEditEvent = useMemo(() => {
+    if (!eventData || !currentUserId) return false;
+    const me = eventData.members.find((member) => member.user_id === currentUserId);
+    if (!me) return false;
+    return me.role !== "Member";
+  }, [eventData, currentUserId]);
 
   const loadEvent = async () => {
     if (!eventId) {
@@ -264,13 +283,25 @@ export default function EventOverviewPage() {
                 {daysLeft >= 0 ? `${daysLeft} days left` : `${Math.abs(daysLeft)} days overdue`}
               </span>
             )}
-            <Link
-              href={`/dashboard/event/${eventData.id}/edit`}
-              className="btn-ghost px-3 py-1.5 text-xs"
-              style={{ padding: "6px 12px", textDecoration: "none" }}
-            >
-              ⚙ Edit Event
-            </Link>
+            {canEditEvent ? (
+              <Link
+                href={`/dashboard/event/${eventData.id}/edit`}
+                className="btn-ghost px-3 py-1.5 text-xs"
+                style={{ padding: "6px 12px", textDecoration: "none" }}
+              >
+                ⚙ Edit Event
+              </Link>
+            ) : (
+              <button
+                type="button"
+                className="btn-ghost px-3 py-1.5 text-xs"
+                style={{ padding: "6px 12px", opacity: 0.6, cursor: "not-allowed" }}
+                title="Members cannot edit event details"
+                disabled
+              >
+                ⚙ Edit Event
+              </button>
+            )}
           </div>
         </div>
       </div>
