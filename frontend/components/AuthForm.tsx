@@ -20,7 +20,6 @@ type AuthApiResponse = {
 export default function AuthForm({ mode }: AuthFormProps) {
   const isLogin = mode === "login";
   const router = useRouter();
-  const [role, setRole] = useState<"organizer" | "member">("organizer");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -68,7 +67,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
           name: name.trim(),
           email: email.trim(),
           password,
-          role: role === "organizer" ? "Organizer" : "Member",
+          role: "Organizer",
           privacy_consent: privacyConsent,
         };
 
@@ -170,28 +169,6 @@ export default function AuthForm({ mode }: AuthFormProps) {
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Confirm password</label>
                   <input className="input" type="password" placeholder="••••••••" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 8 }}>Your role</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    {(['organizer', 'member'] as const).map(r => (
-                      <button type="button" key={r} onClick={() => setRole(r)} style={{
-                        padding: '12px',
-                        borderRadius: 10,
-                        border: `1px solid ${role === r ? 'var(--accent)' : 'var(--border)'}`,
-                        background: role === r ? 'rgba(124,92,252,0.12)' : 'var(--surface-2)',
-                        color: role === r ? 'var(--accent)' : 'var(--text-2)',
-                        fontWeight: 600,
-                        fontSize: '0.875rem',
-                        textTransform: 'capitalize',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                      }}>
-                        {r === 'organizer' ? '🎪' : '👤'} {r}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
