@@ -63,13 +63,10 @@ const priorityColor: Record<string, string> = {
 };
 
 export default function TasksPage() {
-<<<<<<< HEAD
   /** After a drag, the browser still fires a click on the card — suppress opening the detail panel. */
   const suppressTaskCardClickRef = useRef(false);
 
-=======
   const searchParams = useSearchParams();
->>>>>>> c0010ebf201cb539d377b957013edb3e77cd374e
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
