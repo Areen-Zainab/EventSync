@@ -14,6 +14,29 @@ ADD COLUMN IF NOT EXISTS priority VARCHAR(20) NOT NULL DEFAULT 'medium';
 ALTER TABLE tasks
 ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+ALTER TABLE event_members
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id        UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  task_reminders BOOLEAN NOT NULL DEFAULT TRUE,
+  ai_alerts      BOOLEAN NOT NULL DEFAULT TRUE,
+  team_updates   BOOLEAN NOT NULL DEFAULT FALSE,
+  quiet_hours    BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS event_messages (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id     UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  user_id      UUID REFERENCES users(id) ON DELETE SET NULL,
+  message      TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_pinned    BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at   TIMESTAMPTZ
+);
+
 -- Keep supported priority values constrained
 DO $$
 BEGIN

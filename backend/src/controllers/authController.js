@@ -4,6 +4,13 @@ const { query } = require('../config/db');
 
 const SALT_ROUNDS = 10;
 
+const DEFAULT_SETTINGS = {
+  task_reminders: true,
+  ai_alerts: true,
+  team_updates: false,
+  quiet_hours: true,
+};
+
 const generateToken = (user) =>
   jwt.sign(
     { id: user.id, email: user.email, role: user.role },
@@ -83,4 +90,128 @@ const login = async (req, res, next) => {
   }
 };
 
-module.exports = { signup, login };
+const getCurrentUser = async (req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT u.id, u.name, u.email, u.role, u.privacy_consent, u.created_at,
+              COALESCE(s.task_reminders, TRUE) AS task_reminders,
+              COALESCE(s.ai_alerts, TRUE) AS ai_alerts,
+              COALESCE(s.team_updates, FALSE) AS team_updates,
+              COALESCE(s.quiet_hours, TRUE) AS quiet_hours
+       FROM users u
+       LEFT JOIN user_settings s ON s.user_id = u.id
+       WHERE u.id = $1`,
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Account not found.' });
+    }
+
+    const user = result.rows[0];
+    return res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        privacy_consent: user.privacy_consent,
+        created_at: user.created_at,
+      },
+      settings: {
+        taskReminders: user.task_reminders,
+        aiAlerts: user.ai_alerts,
+        teamUpdates: user.team_updates,
+        quietHours: user.quiet_hours,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const updateCurrentUser = async (req, res, next) => {
+  try {
+    const { name, email, settings } = req.body;
+
+    const existing = await query('SELECT id, email FROM users WHERE id = $1', [req.user.id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Account not found.' });
+    }
+
+    if (email && email.trim().toLowerCase() !== existing.rows[0].email.toLowerCase()) {
+      const duplicate = await query('SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id <> $2', [email.trim(), req.user.id]);
+      if (duplicate.rows.length > 0) {
+        return res.status(409).json({ success: false, message: 'Email already registered.' });
+      }
+    }
+
+    const updateResult = await query(
+      `UPDATE users
+       SET name = COALESCE(NULLIF($1, ''), name),
+           email = COALESCE(NULLIF($2, ''), email)
+       WHERE id = $3
+       RETURNING id, name, email, role, privacy_consent, created_at`,
+      [name || null, email || null, req.user.id]
+    );
+
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Account not found.' });
+    }
+
+    let savedSettings = null;
+    if (settings && typeof settings === 'object') {
+      const taskReminders = settings.taskReminders ?? DEFAULT_SETTINGS.task_reminders;
+      const aiAlerts = settings.aiAlerts ?? DEFAULT_SETTINGS.ai_alerts;
+      const teamUpdates = settings.teamUpdates ?? DEFAULT_SETTINGS.team_updates;
+      const quietHours = settings.quietHours ?? DEFAULT_SETTINGS.quiet_hours;
+
+      const settingsResult = await query(
+        `INSERT INTO user_settings (user_id, task_reminders, ai_alerts, team_updates, quiet_hours, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (user_id)
+         DO UPDATE SET task_reminders = EXCLUDED.task_reminders,
+                       ai_alerts = EXCLUDED.ai_alerts,
+                       team_updates = EXCLUDED.team_updates,
+                       quiet_hours = EXCLUDED.quiet_hours,
+                       updated_at = NOW()
+         RETURNING task_reminders, ai_alerts, team_updates, quiet_hours`,
+        [req.user.id, taskReminders, aiAlerts, teamUpdates, quietHours]
+      );
+
+      savedSettings = settingsResult.rows[0];
+    }
+
+    const user = updateResult.rows[0];
+    return res.json({
+      success: true,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, privacy_consent: user.privacy_consent, created_at: user.created_at },
+      settings: savedSettings
+        ? {
+            taskReminders: savedSettings.task_reminders,
+            aiAlerts: savedSettings.ai_alerts,
+            teamUpdates: savedSettings.team_updates,
+            quietHours: savedSettings.quiet_hours,
+          }
+        : undefined,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteCurrentUser = async (req, res, next) => {
+  try {
+    const result = await query('DELETE FROM users WHERE id = $1 RETURNING id', [req.user.id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Account not found.' });
+    }
+
+    return res.json({ success: true, message: 'Account deleted successfully.' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { signup, login, getCurrentUser, updateCurrentUser, deleteCurrentUser };
