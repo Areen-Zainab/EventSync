@@ -1,24 +1,86 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const notifications = [
-  { id: 1, type: "task", title: "Confirm venue deposit", body: "Due in 6 hours · Annual Tech Gala", time: "5 min ago", read: false, icon: "🔴" },
-  { id: 2, type: "ai", title: "AI Risk Alert", body: "Vendor deadline not confirmed — 2 days left in 'Spring Cultural Fest'", time: "22 min ago", read: false, icon: "🤖" },
-  { id: 3, type: "team", title: "New task assigned to you", body: "Omar assigned 'Book AV Equipment' to you", time: "1 hr ago", read: false, icon: "✅" },
-  { id: 4, type: "ai", title: "AI extracted 4 tasks", body: "From recent chat in 'Startup Pitch Night'", time: "2 hr ago", read: true, icon: "🤖" },
-  { id: 5, type: "task", title: "Finalize speaker lineup", body: "Due in 18 hours · Annual Tech Gala", time: "3 hr ago", read: true, icon: "⏰" },
-  { id: 6, type: "team", title: "Sara Lee joined Tech Gala", body: "Sara was added as a Member by Rania", time: "5 hr ago", read: true, icon: "👤" },
-  { id: 7, type: "team", title: "Message pinned in #tech-gala", body: "Alex pinned 'Venue: City Convention Hall, Floor 3'", time: "Yesterday", read: true, icon: "📌" },
-];
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+
+type DashboardActivity = {
+  text: string;
+  time: string;
+  icon: string;
+};
+
+type DashboardResponse = {
+  success: boolean;
+  dashboard?: {
+    activity: DashboardActivity[];
+  };
+  message?: string;
+};
+
+type NotificationItem = {
+  id: string;
+  type: "task" | "ai" | "team";
+  title: string;
+  body: string;
+  time: string;
+  read: boolean;
+  icon: string;
+};
+
+const notifications: NotificationItem[] = [];
 
 const typeColor: Record<string, string> = { task: "var(--overdue)", ai: "var(--accent)", team: "var(--on-track)" };
 
 export default function NotificationsPage() {
   const [filter, setFilter] = useState("All");
   const [items, setItems] = useState(notifications);
+  const typeByFilter: Record<string, NotificationItem["type"] | "all"> = {
+    All: "all",
+    "Task Reminders": "task",
+    "AI Alerts": "ai",
+    "Team Activity": "team",
+  };
 
-  const filtered = filter === "All" ? items : items.filter(n => n.type === filter.toLowerCase().replace(' ', ''));
+  const selectedType = typeByFilter[filter] || "all";
+  const filtered = selectedType === "all" ? items : items.filter((n) => n.type === selectedType);
   const unread = items.filter(n => !n.read).length;
+
+  useEffect(() => {
+    const loadTeamActivity = async () => {
+      const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+      if (!token) return;
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/dashboard`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const result: DashboardResponse = await response.json();
+        if (!response.ok || !result.success || !result.dashboard) return;
+
+        const teamNotifications: NotificationItem[] = (result.dashboard.activity || []).map((activity, index) => ({
+          id: `team-${index}-${activity.time}-${activity.text}`,
+          type: "team",
+          title: "Team Activity",
+          body: activity.text,
+          time: activity.time,
+          read: false,
+          icon: activity.icon || "💬",
+        }));
+
+        setItems((current) => {
+          const nonTeamItems = current.filter((item) => item.type !== "team");
+          return [...teamNotifications, ...nonTeamItems];
+        });
+      } catch {
+        // Keep base notifications when dashboard data cannot be loaded.
+      }
+    };
+
+    void loadTeamActivity();
+  }, []);
 
   return (
     <div style={{ padding: '32px 36px', maxWidth: 700 }}>
