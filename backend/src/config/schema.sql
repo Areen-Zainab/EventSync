@@ -12,6 +12,16 @@ CREATE TABLE IF NOT EXISTS users (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- User settings
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id        UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  task_reminders BOOLEAN NOT NULL DEFAULT TRUE,
+  ai_alerts      BOOLEAN NOT NULL DEFAULT TRUE,
+  team_updates   BOOLEAN NOT NULL DEFAULT FALSE,
+  quiet_hours    BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Events
 CREATE TABLE IF NOT EXISTS events (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
