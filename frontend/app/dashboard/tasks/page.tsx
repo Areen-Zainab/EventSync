@@ -1,5 +1,13 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  type DropResult,
+} from "@hello-pangea/dnd";
+
+// DnD is client-only on this page ("use client").
 
 type TaskStatus = "pending" | "in_progress" | "done";
 type TaskPriority = "low" | "medium" | "high";
@@ -52,6 +60,9 @@ const priorityColor: Record<string, string> = {
 };
 
 export default function TasksPage() {
+  /** After a drag, the browser still fires a click on the card — suppress opening the detail panel. */
+  const suppressTaskCardClickRef = useRef(false);
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -278,10 +289,10 @@ export default function TasksPage() {
     }
   };
 
-  const updateStatus = async (taskId: string, status: TaskStatus): Promise<void> => {
+  const updateStatus = async (taskId: string, status: TaskStatus): Promise<boolean> => {
     if (!token) {
       setError("Please log in again to continue.");
-      return;
+      return false;
     }
     setError("");
     try {
@@ -297,9 +308,37 @@ export default function TasksPage() {
       await loadData();
       setSelectedTaskId(taskId);
       if (draft) setDraft({ ...draft, status });
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update status.";
       setError(message);
+      return false;
+    }
+  };
+
+  const onDragEnd = async (result: DropResult): Promise<void> => {
+    suppressTaskCardClickRef.current = true;
+    window.setTimeout(() => {
+      suppressTaskCardClickRef.current = false;
+    }, 100);
+
+    const { destination, source, draggableId } = result;
+    if (!destination) return;
+
+    const fromStatus = source.droppableId as TaskStatus;
+    const toStatus = destination.droppableId as TaskStatus;
+
+    // Only persist cross-column moves; within-column drops snap back.
+    if (fromStatus === toStatus) return;
+
+    const prevTasksSnapshot = tasks;
+    // Optimistic UI update for smooth drag feel.
+    setTasks((prev) => prev.map((t) => (t.id === draggableId ? { ...t, status: toStatus } : t)));
+
+    const ok = await updateStatus(draggableId, toStatus);
+    if (!ok) {
+      // Backend rejected update; revert optimistic UI.
+      setTasks(prevTasksSnapshot);
     }
   };
 
@@ -361,7 +400,8 @@ export default function TasksPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: selectedTaskId || draft ? '1fr 320px' : '1fr', gap: 20 }}>
         {/* Kanban */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <DragDropContext onDragEnd={onDragEnd}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           {[
             { col: "To Do", key: "todo" as const, color: "#a0a0c0" },
             { col: "In Progress", key: "inProgress" as const, color: "var(--at-risk)" },
@@ -372,28 +412,60 @@ export default function TasksPage() {
                 <span style={{ fontSize: '0.72rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{col}</span>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', background: 'var(--surface-2)', padding: '2px 8px', borderRadius: 99 }}>{groupedTasks[key].length}</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {groupedTasks[key].map(task => (
-                  <div key={task.id} onClick={() => { setSelectedTaskId(task.id === selectedTaskId ? null : task.id); resetDraft(); }} className="card" style={{ padding: '12px 14px', cursor: 'pointer', border: selectedTaskId === task.id ? '1px solid var(--accent)' : '1px solid var(--border)', background: selectedTaskId === task.id ? 'rgba(124,92,252,0.06)' : 'var(--surface)', transition: 'all 0.15s' }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: priorityColor[task.priority], marginTop: 5, flexShrink: 0 }} />
-                      <p style={{ fontSize: '0.85rem', fontWeight: 500, color: key === 'done' ? 'var(--text-3)' : 'var(--text-1)', margin: 0, textDecoration: key === 'done' ? 'line-through' : 'none' }}>{task.title}</p>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent), var(--accent-3))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 700, color: '#fff' }}>{(task.assigned_to || "U")[0]}</div>
-                        <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{task.assigned_to ? task.assigned_to.slice(0, 8) : "Unassigned"}</span>
-                      </div>
-                      <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{formatDate(task.due_date)}</span>
-                    </div>
-                    <p style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginTop: 6 }}>📅 {eventNameById[task.event_id] || "Unknown event"}</p>
+              <Droppable droppableId={key === "todo" ? "pending" : key === "inProgress" ? "in_progress" : "done"}>
+                {(provided) => (
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                      minHeight: 120,
+                      padding: 2,
+                      borderRadius: 10,
+                    }}
+                  >
+                    {groupedTasks[key].map((task, index) => (
+                      <Draggable key={task.id} draggableId={task.id} index={index}>
+                        {(dragProvided) => (
+                          <div
+                            ref={dragProvided.innerRef}
+                            {...dragProvided.draggableProps}
+                            {...dragProvided.dragHandleProps}
+                            onClick={() => {
+                              if (suppressTaskCardClickRef.current) return;
+                              setSelectedTaskId(task.id === selectedTaskId ? null : task.id);
+                              resetDraft();
+                            }}
+                            className="card"
+                            style={{ padding: '12px 14px', cursor: 'pointer', border: selectedTaskId === task.id ? '1px solid var(--accent)' : '1px solid var(--border)', background: selectedTaskId === task.id ? 'rgba(124,92,252,0.06)' : 'var(--surface)', transition: 'all 0.15s', ...dragProvided.draggableProps.style }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
+                              <div style={{ width: 6, height: 6, borderRadius: '50%', background: priorityColor[task.priority], marginTop: 5, flexShrink: 0 }} />
+                              <p style={{ fontSize: '0.85rem', fontWeight: 500, color: key === 'done' ? 'var(--text-3)' : 'var(--text-1)', margin: 0, textDecoration: key === 'done' ? 'line-through' : 'none' }}>{task.title}</p>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent), var(--accent-3))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 700, color: '#fff' }}>{(task.assigned_to || "U")[0]}</div>
+                                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{task.assigned_to ? task.assigned_to.slice(0, 8) : "Unassigned"}</span>
+                              </div>
+                              <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{formatDate(task.due_date)}</span>
+                            </div>
+                            <p style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginTop: 6 }}>📅 {eventNameById[task.event_id] || "Unknown event"}</p>
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                    {provided.placeholder}
                   </div>
-                ))}
-                <button onClick={() => startCreateTask(key === "todo" ? "pending" : key === "inProgress" ? "in_progress" : "done")} style={{ width: '100%', padding: '8px', background: 'none', border: '1px dashed var(--border)', borderRadius: 10, color: 'var(--text-3)', fontSize: '0.75rem', cursor: 'pointer' }}>+ Add task</button>
-              </div>
+                )}
+              </Droppable>
+              <button onClick={() => startCreateTask(key === "todo" ? "pending" : key === "inProgress" ? "in_progress" : "done")} style={{ width: '100%', padding: '8px', background: 'none', border: '1px dashed var(--border)', borderRadius: 10, color: 'var(--text-3)', fontSize: '0.75rem', cursor: 'pointer' }}>+ Add task</button>
             </div>
           ))}
-        </div>
+          </div>
+        </DragDropContext>
 
         {/* Task Detail Panel */}
         {(selectedTask || draft) && (
