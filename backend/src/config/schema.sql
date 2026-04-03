@@ -56,6 +56,37 @@ CREATE TABLE IF NOT EXISTS event_messages (
   deleted_at   TIMESTAMPTZ
 );
 
+ALTER TABLE event_messages
+  ADD COLUMN IF NOT EXISTS parent_message_id UUID REFERENCES event_messages(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS mention_user_ids UUID[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS attachment_path TEXT,
+  ADD COLUMN IF NOT EXISTS attachment_name VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS attachment_mime VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS attachment_size BIGINT;
+
+CREATE TABLE IF NOT EXISTS message_reads (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  message_id  UUID NOT NULL REFERENCES event_messages(id) ON DELETE CASCADE,
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  read_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (message_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_messages_event_created
+  ON event_messages (event_id, created_at ASC);
+
+CREATE INDEX IF NOT EXISTS idx_event_messages_event_parent
+  ON event_messages (event_id, parent_message_id);
+
+CREATE INDEX IF NOT EXISTS idx_event_messages_event_pin_created
+  ON event_messages (event_id, is_pinned DESC, created_at ASC);
+
+CREATE INDEX IF NOT EXISTS idx_message_reads_message
+  ON message_reads (message_id);
+
+CREATE INDEX IF NOT EXISTS idx_message_reads_user
+  ON message_reads (user_id);
+
 -- Tasks
 CREATE TABLE IF NOT EXISTS tasks (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

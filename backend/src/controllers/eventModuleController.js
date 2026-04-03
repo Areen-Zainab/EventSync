@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { getIo } = require('../realtime/io');
 const {
   VALID_MEMBER_ROLES,
   withTransaction,
@@ -15,6 +16,7 @@ const VALID_PRIORITIES = new Set(['low', 'medium', 'high']);
 
 const isUuid = (value) =>
   typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+const roomName = (eventId) => `event:${eventId}`;
 
 const hasEventAccess = async (db, userId, eventId) => {
   const result = await db(
@@ -47,6 +49,93 @@ const getEventRole = async (db, userId, eventId) => {
 const canManageEvent = async (db, userId, eventId) => {
   const role = await getEventRole(db, userId, eventId);
   return role === 'Organizer' || role === 'Coordinator';
+};
+
+const parseMentionUserIds = async (db, eventId, message) => {
+  const text = String(message || '');
+  const mentions = [...text.matchAll(/@([a-zA-Z0-9._-]{2,50})/g)].map((match) => match[1].toLowerCase());
+  if (mentions.length === 0) return [];
+
+  const membersResult = await db(
+    `SELECT u.id, LOWER(u.name) AS lowered_name, LOWER(split_part(u.email, '@', 1)) AS lowered_email_name
+     FROM event_members em
+     JOIN users u ON u.id = em.user_id
+     WHERE em.event_id = $1`,
+    [eventId]
+  );
+
+  const lookup = new Map();
+  for (const row of membersResult.rows) {
+    if (row.lowered_name) lookup.set(row.lowered_name, row.id);
+    if (row.lowered_email_name) lookup.set(row.lowered_email_name, row.id);
+  }
+
+  return [...new Set(mentions.map((m) => lookup.get(m)).filter(Boolean))];
+};
+
+const loadMessageById = async (db, messageId, currentUserId = null) => {
+  const result = await db(
+    `SELECT m.id,
+            m.event_id,
+            m.user_id,
+            m.message,
+            m.created_at,
+            m.updated_at,
+            m.deleted_at,
+            m.is_pinned,
+            m.parent_message_id,
+            m.mention_user_ids,
+            m.attachment_path,
+            m.attachment_name,
+            m.attachment_mime,
+            m.attachment_size,
+            u.name AS sender_name,
+            u.email AS sender_email,
+            COUNT(mr.id)::int AS read_count,
+            BOOL_OR(mr.user_id = $2) AS read_by_me
+     FROM event_messages m
+     LEFT JOIN users u ON u.id = m.user_id
+     LEFT JOIN message_reads mr ON mr.message_id = m.id
+     WHERE m.id = $1
+     GROUP BY m.id, u.name, u.email`,
+    [messageId, currentUserId]
+  );
+
+  if (!result.rows[0]) return null;
+  return sanitizeMessageRow(result.rows[0], currentUserId);
+};
+
+const createEventMessage = async (db, { eventId, userId, message, parentMessageId = null, file = null }) => {
+  const mentionUserIds = await parseMentionUserIds(db, eventId, message);
+  const result = await db(
+    `INSERT INTO event_messages (
+      event_id,
+      user_id,
+      message,
+      parent_message_id,
+      mention_user_ids,
+      attachment_path,
+      attachment_name,
+      attachment_mime,
+      attachment_size
+    )
+    VALUES ($1, $2, $3, $4, $5::uuid[], $6, $7, $8, $9)
+    RETURNING id`,
+    [
+      eventId,
+      userId,
+      String(message).trim(),
+      parentMessageId || null,
+      mentionUserIds,
+      file?.path ? `/uploads/chat/${file.filename}` : null,
+      file?.originalname || null,
+      file?.mimetype || null,
+      file?.size || null,
+    ]
+  );
+
+  const messagePayload = await loadMessageById(db, result.rows[0].id, userId);
+  return { messagePayload, mentionUserIds };
 };
 
 const loadEventTaskRows = async (db, eventId) => {
@@ -105,13 +194,23 @@ const loadEventMessageRows = async (db, eventId, currentUserId = null) => {
             m.updated_at,
             m.deleted_at,
             m.is_pinned,
+            m.parent_message_id,
+            m.mention_user_ids,
+            m.attachment_path,
+            m.attachment_name,
+            m.attachment_mime,
+            m.attachment_size,
             u.name AS sender_name,
-            u.email AS sender_email
+            u.email AS sender_email,
+            COUNT(mr.id)::int AS read_count,
+            BOOL_OR(mr.user_id = $2) AS read_by_me
      FROM event_messages m
      LEFT JOIN users u ON u.id = m.user_id
+     LEFT JOIN message_reads mr ON mr.message_id = m.id
      WHERE m.event_id = $1 AND m.deleted_at IS NULL
+     GROUP BY m.id, u.name, u.email
      ORDER BY m.is_pinned DESC, m.created_at ASC`,
-    [eventId]
+    [eventId, currentUserId]
   );
 
   return result.rows.map((row) => sanitizeMessageRow(row, currentUserId));
@@ -634,33 +733,186 @@ const sendEventMessage = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Event not found.' });
     }
 
-    const { message } = req.body;
+    const { message, parent_message_id: parentMessageId } = req.body;
     if (!message || !String(message).trim()) {
       return res.status(400).json({ success: false, message: 'Message is required.' });
     }
 
-    const result = await query(
-      `INSERT INTO event_messages (event_id, user_id, message)
-       VALUES ($1, $2, $3)
-       RETURNING id, event_id, user_id, message, created_at, updated_at, is_pinned, deleted_at`,
-      [eventId, req.user.id, String(message).trim()]
-    );
+    const { messagePayload, mentionUserIds } = await createEventMessage(query, {
+      eventId,
+      userId: req.user.id,
+      message,
+      parentMessageId: parentMessageId || null,
+      file: req.file || null,
+    });
 
-    const senderResult = await query('SELECT name, email FROM users WHERE id = $1', [req.user.id]);
-    const row = result.rows[0];
-    const messagePayload = sanitizeMessageRow(
-      {
-        ...row,
-        sender_name: senderResult.rows[0]?.name || null,
-        sender_email: senderResult.rows[0]?.email || null,
-      },
-      req.user.id
-    );
+    const io = getIo();
+    if (io) {
+      io.to(roomName(eventId)).emit('chat:newMessage', messagePayload);
+      if (mentionUserIds.length > 0) {
+        const mentionPayload = await getMentionPayload({ eventId, messagePayload, mentionUserIds });
+        io.to(roomName(eventId)).emit('chat:mentionPing', mentionPayload);
+      }
+    }
 
-    return res.status(201).json({ success: true, chat_message: messagePayload });
+    return res.status(201).json({ success: true, chat_message: messagePayload, mention_user_ids: mentionUserIds });
   } catch (err) {
     next(err);
   }
+};
+
+// PATCH /api/events/:id/messages/:messageId/pin
+const pinEventMessage = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const { messageId } = req.params;
+    const canEdit = await canManageEvent(query, req.user.id, eventId);
+    if (!canEdit) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to pin messages.' });
+    }
+
+    const result = await query(
+      `UPDATE event_messages
+       SET is_pinned = NOT is_pinned, updated_at = NOW()
+       WHERE id = $1 AND event_id = $2 AND deleted_at IS NULL
+       RETURNING id`,
+      [messageId, eventId]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Message not found.' });
+    }
+
+    const messagePayload = await loadMessageById(query, messageId, req.user.id);
+    const io = getIo();
+    if (io) {
+      io.to(roomName(eventId)).emit('chat:messagePinned', messagePayload);
+    }
+    return res.json({ success: true, chat_message: messagePayload });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/events/:id/messages/read
+const markMessagesAsRead = async (req, res, next) => {
+  try {
+    const eventId = req.params.id;
+    const allowed = await hasEventAccess(query, req.user.id, eventId);
+    if (!allowed) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+
+    const messageIds = Array.isArray(req.body?.message_ids) ? req.body.message_ids.filter(isUuid) : [];
+    if (messageIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'message_ids must contain at least one valid id.' });
+    }
+
+    await query(
+      `INSERT INTO message_reads (message_id, user_id)
+       SELECT m.id, $2
+       FROM event_messages m
+       WHERE m.event_id = $1
+         AND m.id = ANY($3::uuid[])
+         AND m.deleted_at IS NULL
+       ON CONFLICT (message_id, user_id) DO UPDATE SET read_at = NOW()`,
+      [eventId, req.user.id, messageIds]
+    );
+
+    const io = getIo();
+    if (io) {
+      io.to(roomName(eventId)).emit('chat:messageRead', {
+        event_id: eventId,
+        message_ids: messageIds,
+        user_id: req.user.id,
+      });
+    }
+
+    return res.json({ success: true, message_ids: messageIds });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const createMessageViaSocket = async ({ eventId, userId, message, parentMessageId = null }) => {
+  const allowed = await hasEventAccess(query, userId, eventId);
+  if (!allowed) {
+    const error = new Error('Event not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+  return createEventMessage(query, { eventId, userId, message, parentMessageId });
+};
+
+const togglePinnedViaSocket = async ({ eventId, userId, messageId }) => {
+  const canEdit = await canManageEvent(query, userId, eventId);
+  if (!canEdit) {
+    const error = new Error('You do not have permission to pin messages.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const result = await query(
+    `UPDATE event_messages
+     SET is_pinned = NOT is_pinned, updated_at = NOW()
+     WHERE id = $1 AND event_id = $2 AND deleted_at IS NULL
+     RETURNING id`,
+    [messageId, eventId]
+  );
+  if (!result.rows[0]) return null;
+  return loadMessageById(query, messageId, userId);
+};
+
+const markMessageReadsViaSocket = async ({ eventId, userId, messageIds = [] }) => {
+  const safeMessageIds = messageIds.filter(isUuid);
+  if (safeMessageIds.length === 0) return [];
+
+  await query(
+    `INSERT INTO message_reads (message_id, user_id)
+     SELECT m.id, $2
+     FROM event_messages m
+     WHERE m.event_id = $1
+       AND m.id = ANY($3::uuid[])
+       AND m.deleted_at IS NULL
+     ON CONFLICT (message_id, user_id) DO UPDATE SET read_at = NOW()`,
+    [eventId, userId, safeMessageIds]
+  );
+
+  return safeMessageIds;
+};
+
+const getEventAccessForSocket = async ({ eventId, userId }) => {
+  return hasEventAccess(query, userId, eventId);
+};
+
+const getEventRoleForSocket = async ({ eventId, userId }) => {
+  return getEventRole(query, userId, eventId);
+};
+
+const getEventMessagesForSocket = async ({ eventId, userId }) => {
+  return loadEventMessageRows(query, eventId, userId);
+};
+
+const getMessageByIdForSocket = async ({ messageId, userId }) => {
+  return loadMessageById(query, messageId, userId);
+};
+
+const getMentionPayload = async ({ eventId, messagePayload, mentionUserIds = [] }) => {
+  if (!Array.isArray(mentionUserIds) || mentionUserIds.length === 0) {
+    return [];
+  }
+  const result = await query(
+    `SELECT id, name
+     FROM users
+     WHERE id = ANY($1::uuid[])`,
+    [mentionUserIds]
+  );
+  return result.rows.map((row) => ({
+    event_id: eventId,
+    message_id: messagePayload.id,
+    target_user_id: row.id,
+    target_name: row.name,
+  }));
 };
 
 module.exports = {
@@ -675,4 +927,14 @@ module.exports = {
   removeEventMember,
   getEventMessages,
   sendEventMessage,
+  pinEventMessage,
+  markMessagesAsRead,
+  createMessageViaSocket,
+  togglePinnedViaSocket,
+  markMessageReadsViaSocket,
+  getEventAccessForSocket,
+  getEventRoleForSocket,
+  getEventMessagesForSocket,
+  getMessageByIdForSocket,
+  getMentionPayload,
 };
