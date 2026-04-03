@@ -28,6 +28,11 @@ type TaskDetail = {
   priority: TaskPriority;
 };
 
+type ExtractedTask = {
+  title: string;
+  description: string;
+};
+
 type EventMember = {
   user_id: string;
   name: string;
@@ -182,6 +187,50 @@ const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
   return { total, done };
 };
 
+const extractTaskCandidatesFromMessages = (messages: EventMessage[]): ExtractedTask[] => {
+  const seen = new Set<string>();
+  const extracted: ExtractedTask[] = [];
+
+  for (const message of messages) {
+    if (!message.message) continue;
+    const lines = message.message.split(/\r?\n/);
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      const normalized = line
+        .replace(/^[-*•]\s*/, "")
+        .replace(/^\d+[.)]\s*/, "")
+        .replace(/^\[\s?\]\s*/, "")
+        .trim();
+
+      if (normalized.length < 4 || normalized.length > 120) continue;
+
+      const looksLikeTask = /^(todo|task|need to|must|please|remember to)\b/i.test(normalized) || /^[-*•\d[]/.test(line);
+      if (!looksLikeTask) continue;
+
+      const title = normalized
+        .replace(/^(todo|task|need to|must|please|remember to)\s*:?\s*/i, "")
+        .trim();
+
+      if (!title) continue;
+      const dedupeKey = title.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      extracted.push({
+        title,
+        description: `Extracted from chat: ${message.message.slice(0, 180)}`,
+      });
+
+      if (extracted.length >= 10) return extracted;
+    }
+  }
+
+  return extracted;
+};
+
 export default function EventOverviewPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -208,6 +257,8 @@ export default function EventOverviewPage() {
   } | null>(null);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
+  const [extractingTasks, setExtractingTasks] = useState(false);
+  const [extractFeedback, setExtractFeedback] = useState("");
   const socketRef = useRef<Socket | null>(null);
 
   const allTasks = useMemo(() => {
@@ -384,6 +435,63 @@ export default function EventOverviewPage() {
       setTaskError(err instanceof Error ? err.message : "Failed to delete task.");
     } finally {
       setTaskSaving(false);
+    }
+  };
+
+  const extractTasksFromChat = async () => {
+    if (!eventData) return;
+
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) {
+      setExtractFeedback("Please log in again.");
+      return;
+    }
+
+    const candidates = extractTaskCandidatesFromMessages(eventData.messages);
+    if (candidates.length === 0) {
+      setExtractFeedback("No task-like items found in chat yet.");
+      return;
+    }
+
+    setExtractingTasks(true);
+    setExtractFeedback("");
+
+    try {
+      let createdCount = 0;
+
+      for (const candidate of candidates) {
+        const response = await fetch(`${API_BASE_URL}/tasks`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            event_id: eventData.id,
+            title: candidate.title,
+            description: candidate.description,
+            status: "pending",
+            priority: "medium",
+          }),
+        });
+
+        const data: ApiResponse = await response.json();
+        if (response.ok && data.success && data.task) {
+          createdCount += 1;
+        }
+      }
+
+      await loadEvent();
+      setTab("Tasks");
+      setExtractFeedback(
+        createdCount > 0
+          ? `${createdCount} task(s) extracted from chat and added to the board.`
+          : "No new tasks were created from chat messages."
+      );
+    } catch {
+      setExtractFeedback("Failed to extract tasks from chat.");
+    } finally {
+      setExtractingTasks(false);
     }
   };
 
@@ -792,6 +900,22 @@ export default function EventOverviewPage() {
 
         {tab === "Chat" && (
           <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            <div style={{ padding: "12px 24px 0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-3)" }}>
+                Convert checklist/chat TODO lines into tasks.
+              </p>
+              <button
+                type="button"
+                className="btn-ghost px-3 py-1.5 text-xs"
+                onClick={() => void extractTasksFromChat()}
+                disabled={extractingTasks}
+              >
+                {extractingTasks ? "Extracting..." : "Extract tasks to board"}
+              </button>
+            </div>
+            {extractFeedback && (
+              <div style={{ margin: "8px 24px 0", fontSize: "0.78rem", color: "var(--accent)" }}>{extractFeedback}</div>
+            )}
             {mentionNotice && (
               <div style={{ margin: "12px 24px 0", fontSize: "0.8rem", color: "var(--accent)" }}>{mentionNotice}</div>
             )}

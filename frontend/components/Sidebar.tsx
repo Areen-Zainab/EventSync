@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 const bottomItems = [
@@ -9,6 +9,7 @@ const bottomItems = [
 
 export default function Sidebar() {
   const path = usePathname();
+  const searchParams = useSearchParams();
   const [account, setAccount] = useState({ name: "Your account", role: "Organizer", initials: "A" });
 
   const eventMatch = path.match(/^\/dashboard\/event\/([^/]+)/);
@@ -30,7 +31,17 @@ export default function Sidebar() {
 
   const isItemActive = (href: string): boolean => {
     if (href.startsWith("/dashboard/event/")) {
-      return path.startsWith("/dashboard/event/");
+      if (!path.startsWith("/dashboard/event/")) return false;
+
+      const [hrefPath, hrefQuery] = href.split("?");
+      if (path !== hrefPath) return false;
+
+      const targetTab = hrefQuery ? new URLSearchParams(hrefQuery).get("tab") : null;
+      const currentTab = searchParams.get("tab") || "Overview";
+      if (targetTab) {
+        return currentTab.toLowerCase() === targetTab.toLowerCase();
+      }
+      return currentTab.toLowerCase() === "overview";
     }
     if (href === "/dashboard/events") {
       return path === "/dashboard" || path.startsWith("/dashboard/events");
