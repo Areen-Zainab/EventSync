@@ -91,13 +91,18 @@ const loadMessageById = async (db, messageId, currentUserId = null) => {
             m.attachment_size,
             u.name AS sender_name,
             u.email AS sender_email,
-            COUNT(mr.id)::int AS read_count,
-            BOOL_OR(mr.user_id = $2) AS read_by_me
+            (SELECT COUNT(*)::int
+             FROM message_reads mr
+             WHERE mr.message_id = m.id) AS read_count,
+            (SELECT EXISTS(
+               SELECT 1
+               FROM message_reads mr
+               WHERE mr.message_id = m.id AND mr.user_id = $2
+             )) AS read_by_me
      FROM event_messages m
      LEFT JOIN users u ON u.id = m.user_id
-     LEFT JOIN message_reads mr ON mr.message_id = m.id
      WHERE m.id = $1
-     GROUP BY m.id, u.name, u.email`,
+     `,
     [messageId, currentUserId]
   );
 
@@ -202,13 +207,17 @@ const loadEventMessageRows = async (db, eventId, currentUserId = null) => {
             m.attachment_size,
             u.name AS sender_name,
             u.email AS sender_email,
-            COUNT(mr.id)::int AS read_count,
-            BOOL_OR(mr.user_id = $2) AS read_by_me
+            (SELECT COUNT(*)::int
+             FROM message_reads mr
+             WHERE mr.message_id = m.id) AS read_count,
+            (SELECT EXISTS(
+               SELECT 1
+               FROM message_reads mr
+               WHERE mr.message_id = m.id AND mr.user_id = $2
+             )) AS read_by_me
      FROM event_messages m
      LEFT JOIN users u ON u.id = m.user_id
-     LEFT JOIN message_reads mr ON mr.message_id = m.id
      WHERE m.event_id = $1 AND m.deleted_at IS NULL
-     GROUP BY m.id, u.name, u.email
      ORDER BY m.is_pinned DESC, m.created_at ASC`,
     [eventId, currentUserId]
   );
