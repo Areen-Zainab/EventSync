@@ -11,6 +11,7 @@ type NotificationItem = {
   time: string;
   read: boolean;
   icon: string;
+  created_at?: string;
   related_task_id?: string;
   related_event_id?: string;
 };
@@ -24,6 +25,20 @@ type ApiNotification = {
   created_at: string;
   related_task_id?: string;
   related_event_id?: string;
+};
+
+type ApiDashboardActivity = {
+  text: string;
+  time: string;
+  icon: string;
+  created_at?: string;
+};
+
+type DashboardApiResponse = {
+  success: boolean;
+  dashboard?: {
+    activity?: ApiDashboardActivity[];
+  };
 };
 
 const typeColor: Record<string, string> = { 
@@ -66,9 +81,9 @@ export default function NotificationsPage() {
 
   const typeByFilter: Record<string, string> = {
     All: "all",
-    "Task Reminders": "task_reminder,task_overdue,task_assigned,task_completed",
+    "Task Reminders": "task_reminder,task_overdue",
     "AI Alerts": "ai_alert",
-    "Team Activity": "team_activity",
+    "Team Activity": "team_activity,task_assigned,task_completed",
   };
 
   const selectedType = typeByFilter[filter] || "all";
@@ -85,18 +100,25 @@ export default function NotificationsPage() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/notifications`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const [notificationsResponse, dashboardResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/notifications`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+        fetch(`${API_BASE_URL}/dashboard`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+      ]);
 
-      if (!response.ok) {
+      if (!notificationsResponse.ok) {
         setLoading(false);
         return;
       }
 
-      const result = await response.json();
+      const result = await notificationsResponse.json();
       if (result.success && result.notifications) {
         const mappedNotifications: NotificationItem[] = result.notifications.map((n: ApiNotification) => ({
           id: n.id,
@@ -106,10 +128,34 @@ export default function NotificationsPage() {
           time: getRelativeTime(n.created_at),
           read: n.is_read,
           icon: typeIcon[n.type] || "🔔",
+          created_at: n.created_at,
           related_task_id: n.related_task_id,
           related_event_id: n.related_event_id,
         }));
-        setItems(mappedNotifications);
+
+        let mappedActivityItems: NotificationItem[] = [];
+        if (dashboardResponse.ok) {
+          const dashboardResult: DashboardApiResponse = await dashboardResponse.json();
+          const activity = dashboardResult.dashboard?.activity || [];
+          mappedActivityItems = activity.map((a, index) => ({
+            id: `activity-${a.created_at || index}`,
+            type: "team_activity",
+            title: "Team Activity",
+            body: a.text,
+            time: a.time || getRelativeTime(a.created_at || new Date().toISOString()),
+            read: true,
+            icon: a.icon || "👥",
+            created_at: a.created_at,
+          }));
+        }
+
+        const mergedItems = [...mappedNotifications, ...mappedActivityItems].sort((a, b) => {
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return bTime - aTime;
+        });
+
+        setItems(mergedItems);
       }
     } catch (err) {
       console.error("Error loading notifications:", err);
