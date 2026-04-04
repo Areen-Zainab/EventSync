@@ -3,6 +3,186 @@ const { query } = require('../config/db');
 const VALID_STATUSES = new Set(['pending', 'in_progress', 'done']);
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high']);
 
+const normalizePriority = (value) => {
+  if (!value) return 'medium';
+  const normalized = String(value).trim().toLowerCase();
+  if (VALID_PRIORITIES.has(normalized)) return normalized;
+  if (normalized === 'urgent') return 'high';
+  return 'medium';
+};
+
+const normalizeStatus = (value) => {
+  if (!value) return 'pending';
+  const normalized = String(value).trim().toLowerCase();
+  if (VALID_STATUSES.has(normalized)) return normalized;
+  if (normalized === 'todo') return 'pending';
+  if (normalized === 'in progress') return 'in_progress';
+  return 'pending';
+};
+
+const heuristicExtractTasks = (messages) => {
+  const extracted = [];
+  const seen = new Set();
+
+  for (const message of messages) {
+    const text = String(message?.message || '').trim();
+    if (!text) continue;
+
+    const lines = text.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      const candidate = line
+        .replace(/^[-*•]\s*/, '')
+        .replace(/^\d+[.)]\s*/, '')
+        .replace(/^\[\s?\]\s*/, '')
+        .replace(/^(todo|task|need to|must|please|remember to)\s*:?\s*/i, '')
+        .trim();
+
+      if (candidate.length < 4 || candidate.length > 140) continue;
+
+      const looksTaskLike = /^(todo|task|need to|must|please|remember to)\b/i.test(line) || /^[-*•\d[]/.test(line);
+      if (!looksTaskLike) continue;
+
+      const dedupeKey = candidate.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      extracted.push({
+        title: candidate,
+        description: `Extracted from chat: ${text.slice(0, 220)}`,
+        status: 'pending',
+        priority: 'medium',
+      });
+
+      if (extracted.length >= 20) return extracted;
+    }
+  }
+
+  return extracted;
+};
+
+const parseJSONArrayFromModelContent = (content) => {
+  if (!content || typeof content !== 'string') return null;
+
+  const trimmed = content.trim();
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (_) {
+    // Continue with fenced-code fallback.
+  }
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (!fenced?.[1]) return null;
+
+  try {
+    const parsed = JSON.parse(fenced[1]);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+};
+
+const resolveAIProviderConfig = () => {
+  if (process.env.GROQ_API_KEY) {
+    return {
+      provider: 'groq',
+      apiKey: process.env.GROQ_API_KEY,
+      endpoint: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1/chat/completions',
+      model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    };
+  }
+
+  if (process.env.OPENAI_API_KEY) {
+    return {
+      provider: 'openai',
+      apiKey: process.env.OPENAI_API_KEY,
+      endpoint: 'https://api.openai.com/v1/chat/completions',
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+    };
+  }
+
+  return null;
+};
+
+const extractTasksWithAI = async (messages) => {
+  const aiConfig = resolveAIProviderConfig();
+  if (!aiConfig) {
+    return heuristicExtractTasks(messages);
+  }
+
+  const chatTranscript = messages
+    .map((message, index) => {
+      const sender = message?.sender_name || message?.sender?.name || 'Member';
+      const content = String(message?.message || '').trim();
+      return `${index + 1}. ${sender}: ${content}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+
+  if (!chatTranscript.trim()) {
+    return [];
+  }
+
+  const prompt = [
+    'Extract actionable tasks from this event chat.',
+    'Return strict JSON only as an array.',
+    'Each item format: {"title": string, "description": string, "status": "pending"|"in_progress"|"done", "priority": "low"|"medium"|"high"}.',
+    'Rules: concise titles, no duplicates, max 20 items, ignore non-actionable chatter.',
+    '',
+    chatTranscript,
+  ].join('\n');
+
+  try {
+    const response = await fetch(aiConfig.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${aiConfig.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: aiConfig.model,
+        temperature: 0.1,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an extraction engine. Output only valid JSON array, no markdown and no explanation.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      return heuristicExtractTasks(messages);
+    }
+
+    const payload = await response.json();
+    const content = payload?.choices?.[0]?.message?.content;
+    const parsed = parseJSONArrayFromModelContent(content);
+    if (!parsed) {
+      return heuristicExtractTasks(messages);
+    }
+
+    return parsed
+      .map((item) => ({
+        title: String(item?.title || '').trim(),
+        description: String(item?.description || '').trim() || null,
+        status: normalizeStatus(item?.status),
+        priority: normalizePriority(item?.priority),
+      }))
+      .filter((item) => item.title.length >= 4)
+      .slice(0, 20);
+  } catch (_) {
+    return heuristicExtractTasks(messages);
+  }
+};
+
 const sanitizeTask = (row) => ({
   id: row.id,
   event_id: row.event_id,
@@ -254,8 +434,68 @@ const deleteTask = async (req, res, next) => {
   }
 };
 
+// POST /api/tasks/extract-from-chat
+const extractTasksFromChat = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { event_id, messages } = req.body;
+
+    if (!event_id) {
+      return res.status(400).json({ success: false, message: 'event_id is required.' });
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ success: false, message: 'messages array is required.' });
+    }
+
+    const hasEventAccess = await ensureEventAccess(userId, event_id);
+    if (!hasEventAccess) {
+      return res.status(403).json({ success: false, message: 'You do not have access to this event.' });
+    }
+
+    const existingTasksResult = await query(
+      `SELECT LOWER(title) AS lowered_title
+       FROM tasks
+       WHERE event_id = $1`,
+      [event_id]
+    );
+    const existingTitles = new Set(existingTasksResult.rows.map((row) => row.lowered_title));
+
+    const extractedCandidates = await extractTasksWithAI(messages);
+    const filteredCandidates = extractedCandidates.filter((item) => !existingTitles.has(item.title.toLowerCase()));
+
+    const createdTasks = [];
+    for (const candidate of filteredCandidates) {
+      const created = await query(
+        `INSERT INTO tasks (event_id, created_by, title, description, assigned_to, status, due_date, priority, updated_at)
+         VALUES ($1, $2, $3, $4, NULL, $5, NULL, $6, NOW())
+         RETURNING *`,
+        [
+          event_id,
+          userId,
+          candidate.title,
+          candidate.description || null,
+          normalizeStatus(candidate.status),
+          normalizePriority(candidate.priority),
+        ]
+      );
+      createdTasks.push(sanitizeTask(created.rows[0]));
+      existingTitles.add(candidate.title.toLowerCase());
+    }
+
+    return res.json({
+      success: true,
+      extracted_count: extractedCandidates.length,
+      created_count: createdTasks.length,
+      tasks: createdTasks,
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   createTask,
+  extractTasksFromChat,
   getTasks,
   getTaskById,
   updateTask,
