@@ -20,6 +20,81 @@ const normalizeStatus = (value) => {
   return 'pending';
 };
 
+const formatDateOnly = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizeDueDate = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return formatDateOnly(parsed);
+};
+
+const inferDueDateFromText = (text, now = new Date()) => {
+  const value = String(text || '').toLowerCase();
+  if (!value.trim()) return null;
+
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  if (/\b(by\s+)?(today|tonight|eod|end\s+of\s+day)\b/.test(value)) {
+    return formatDateOnly(today);
+  }
+
+  if (/\b(by\s+)?tomorrow\b/.test(value)) {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return formatDateOnly(tomorrow);
+  }
+
+  if (/\b(day\s+after\s+tomorrow)\b/.test(value)) {
+    const next = new Date(today);
+    next.setDate(next.getDate() + 2);
+    return formatDateOnly(next);
+  }
+
+  if (/\b(by\s+)?next\s+week\b/.test(value)) {
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    return formatDateOnly(nextWeek);
+  }
+
+  const weekdayMap = {
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+  };
+  const weekdayMatch = value.match(/\bby\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
+  if (weekdayMatch) {
+    const targetDay = weekdayMap[weekdayMatch[1]];
+    const result = new Date(today);
+    let delta = (targetDay - result.getDay() + 7) % 7;
+    if (delta === 0) delta = 7;
+    result.setDate(result.getDate() + delta);
+    return formatDateOnly(result);
+  }
+
+  const explicitDate = normalizeDueDate(value);
+  if (explicitDate) return explicitDate;
+
+  return null;
+};
+
 const heuristicExtractTasks = (messages) => {
   const extracted = [];
   const seen = new Set();
@@ -54,6 +129,7 @@ const heuristicExtractTasks = (messages) => {
         description: `Extracted from chat: ${text.slice(0, 220)}`,
         status: 'pending',
         priority: 'medium',
+        due_date: inferDueDateFromText(line) || inferDueDateFromText(text),
       });
 
       if (extracted.length >= 20) return extracted;
@@ -129,7 +205,8 @@ const extractTasksWithAI = async (messages) => {
   const prompt = [
     'Extract actionable tasks from this event chat.',
     'Return strict JSON only as an array.',
-    'Each item format: {"title": string, "description": string, "status": "pending"|"in_progress"|"done", "priority": "low"|"medium"|"high"}.',
+    'Each item format: {"title": string, "description": string, "status": "pending"|"in_progress"|"done", "priority": "low"|"medium"|"high", "due_date": string|null}.',
+    'For due_date use YYYY-MM-DD when deadline is clear. Parse phrases like "by tonight" as today and "by tomorrow" as tomorrow.',
     'Rules: concise titles, no duplicates, max 20 items, ignore non-actionable chatter.',
     '',
     chatTranscript,
@@ -175,6 +252,10 @@ const extractTasksWithAI = async (messages) => {
         description: String(item?.description || '').trim() || null,
         status: normalizeStatus(item?.status),
         priority: normalizePriority(item?.priority),
+        due_date:
+          normalizeDueDate(item?.due_date) ||
+          inferDueDateFromText(String(item?.title || '')) ||
+          inferDueDateFromText(String(item?.description || '')),
       }))
       .filter((item) => item.title.length >= 4)
       .slice(0, 20);
@@ -467,7 +548,7 @@ const extractTasksFromChat = async (req, res, next) => {
     for (const candidate of filteredCandidates) {
       const created = await query(
         `INSERT INTO tasks (event_id, created_by, title, description, assigned_to, status, due_date, priority, updated_at)
-         VALUES ($1, $2, $3, $4, NULL, $5, NULL, $6, NOW())
+         VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, NOW())
          RETURNING *`,
         [
           event_id,
@@ -475,6 +556,7 @@ const extractTasksFromChat = async (req, res, next) => {
           candidate.title,
           candidate.description || null,
           normalizeStatus(candidate.status),
+          candidate.due_date || null,
           normalizePriority(candidate.priority),
         ]
       );
