@@ -28,11 +28,6 @@ type TaskDetail = {
   priority: TaskPriority;
 };
 
-type ExtractedTask = {
-  title: string;
-  description: string;
-};
-
 type EventMember = {
   user_id: string;
   name: string;
@@ -90,6 +85,9 @@ type ApiResponse = {
   success: boolean;
   event?: EventPayload;
   task?: TaskDetail;
+  tasks?: TaskDetail[];
+  extracted_count?: number;
+  created_count?: number;
   chat_message?: EventMessage;
   messages?: EventMessage[];
   message_ids?: string[];
@@ -185,50 +183,6 @@ const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
   const total = tasks.filter((task) => task.assignee_name === memberName).length;
   const done = tasks.filter((task) => task.assignee_name === memberName && task.status === "done").length;
   return { total, done };
-};
-
-const extractTaskCandidatesFromMessages = (messages: EventMessage[]): ExtractedTask[] => {
-  const seen = new Set<string>();
-  const extracted: ExtractedTask[] = [];
-
-  for (const message of messages) {
-    if (!message.message) continue;
-    const lines = message.message.split(/\r?\n/);
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line) continue;
-
-      const normalized = line
-        .replace(/^[-*•]\s*/, "")
-        .replace(/^\d+[.)]\s*/, "")
-        .replace(/^\[\s?\]\s*/, "")
-        .trim();
-
-      if (normalized.length < 4 || normalized.length > 120) continue;
-
-      const looksLikeTask = /^(todo|task|need to|must|please|remember to)\b/i.test(normalized) || /^[-*•\d[]/.test(line);
-      if (!looksLikeTask) continue;
-
-      const title = normalized
-        .replace(/^(todo|task|need to|must|please|remember to)\s*:?\s*/i, "")
-        .trim();
-
-      if (!title) continue;
-      const dedupeKey = title.toLowerCase();
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-
-      extracted.push({
-        title,
-        description: `Extracted from chat: ${message.message.slice(0, 180)}`,
-      });
-
-      if (extracted.length >= 10) return extracted;
-    }
-  }
-
-  return extracted;
 };
 
 export default function EventOverviewPage() {
@@ -447,9 +401,8 @@ export default function EventOverviewPage() {
       return;
     }
 
-    const candidates = extractTaskCandidatesFromMessages(eventData.messages);
-    if (candidates.length === 0) {
-      setExtractFeedback("No task-like items found in chat yet.");
+    if (!eventData.messages.length) {
+      setExtractFeedback("No chat messages yet to extract from.");
       return;
     }
 
@@ -457,39 +410,35 @@ export default function EventOverviewPage() {
     setExtractFeedback("");
 
     try {
-      let createdCount = 0;
+      const response = await fetch(`${API_BASE_URL}/tasks/extract-from-chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          event_id: eventData.id,
+          messages: eventData.messages.map((message) => ({
+            message: message.message,
+            sender_name: message.sender?.name || null,
+          })),
+        }),
+      });
 
-      for (const candidate of candidates) {
-        const response = await fetch(`${API_BASE_URL}/tasks`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            event_id: eventData.id,
-            title: candidate.title,
-            description: candidate.description,
-            status: "pending",
-            priority: "medium",
-          }),
-        });
-
-        const data: ApiResponse = await response.json();
-        if (response.ok && data.success && data.task) {
-          createdCount += 1;
-        }
+      const data: ApiResponse = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to extract tasks from chat.");
       }
 
       await loadEvent();
       setTab("Tasks");
       setExtractFeedback(
-        createdCount > 0
-          ? `${createdCount} task(s) extracted from chat and added to the board.`
-          : "No new tasks were created from chat messages."
+        (data.created_count || 0) > 0
+          ? `${data.created_count} AI-extracted task(s) added to the board.`
+          : "AI found no new actionable tasks to add."
       );
-    } catch {
-      setExtractFeedback("Failed to extract tasks from chat.");
+    } catch (err) {
+      setExtractFeedback(err instanceof Error ? err.message : "Failed to extract tasks from chat.");
     } finally {
       setExtractingTasks(false);
     }
