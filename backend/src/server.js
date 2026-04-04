@@ -5,6 +5,8 @@ const app = require('./app');
 const { testConnection } = require('./config/db');
 const { setIo } = require('./realtime/io');
 const { initializeChatSocket } = require('./realtime/chatSocket');
+const { startScheduler } = require('./services/notificationScheduler');
+const { initializeEmailTransporter } = require('./services/notificationService');
 
 const PORT = process.env.PORT || 5000;
 
@@ -24,6 +26,12 @@ const startServer = async () => {
     });
     setIo(io);
     initializeChatSocket(io);
+
+    // 3. Initialize email transporter
+    initializeEmailTransporter();
+    
+    // 4. Start notification scheduler
+    startScheduler();
 
     server.listen(PORT, () => {
       console.log(`[SERVER] Running successfully on port ${PORT}`);

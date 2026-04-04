@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { sendNotification } = require('../services/notificationService');
 
 const VALID_STATUSES = new Set(['pending', 'in_progress', 'done']);
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high']);
@@ -345,7 +346,22 @@ const createTask = async (req, res, next) => {
       ]
     );
 
-    return res.status(201).json({ success: true, task: sanitizeTask(result.rows[0]) });
+    const createdTask = result.rows[0];
+
+    // Send notification if task is assigned to someone
+    if (assigned_to && assigned_to !== userId) {
+      await sendNotification({
+        userId: assigned_to,
+        type: 'task_assigned',
+        title: 'New Task Assigned',
+        body: `You have been assigned: "${String(title).trim()}"`,
+        relatedTaskId: createdTask.id,
+        relatedEventId: event_id || null,
+        sendEmail: true,
+      });
+    }
+
+    return res.status(201).json({ success: true, task: sanitizeTask(createdTask) });
   } catch (err) {
     return next(err);
   }
@@ -494,7 +510,25 @@ const updateTaskStatus = async (req, res, next) => {
       [status, taskId]
     );
 
-    return res.json({ success: true, task: sanitizeTask(result.rows[0]) });
+    const updatedTask = result.rows[0];
+
+    // Send notification if task is completed
+    if (status === 'done' && existingTask.status !== 'done') {
+      // Notify creator if someone else completed it
+      if (existingTask.created_by && existingTask.created_by !== req.user.id) {
+        await sendNotification({
+          userId: existingTask.created_by,
+          type: 'task_completed',
+          title: 'Task Completed',
+          body: `"${existingTask.title}" has been marked as complete.`,
+          relatedTaskId: taskId,
+          relatedEventId: existingTask.event_id,
+          sendEmail: false, // Only in-app notification for completions
+        });
+      }
+    }
+
+    return res.json({ success: true, task: sanitizeTask(updatedTask) });
   } catch (err) {
     return next(err);
   }

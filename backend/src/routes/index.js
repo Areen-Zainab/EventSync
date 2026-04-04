@@ -5,6 +5,7 @@ const dashboardRoutes = require('./dashboardRoutes');
 const authRoutes = require('./authRoutes');
 const eventRoutes = require('./eventRoutes');
 const taskRoutes = require('./taskRoutes');
+const notificationRoutes = require('./notificationRoutes');
 
 // Health check
 router.get('/health', (req, res) => {
@@ -15,5 +16,6 @@ router.use('/auth', authRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/events', eventRoutes);
 router.use('/tasks', taskRoutes);
+router.use('/notifications', notificationRoutes);
 
 module.exports = router;
