@@ -4,7 +4,7 @@
     "builder": "nixpacks"
   },
   "deploy": {
-    "startCommand": "npm start",
+    "startCommand": "node backend/src/server.js",
     "restartPolicyMaxRetries": 5
   }
 }
