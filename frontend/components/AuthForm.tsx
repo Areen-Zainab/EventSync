@@ -29,7 +29,13 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+  const rawApiUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:5000";
+  const API_BASE_URL = rawApiUrl.replace(/\/$/, "").endsWith("/api")
+    ? rawApiUrl.replace(/\/$/, "")
+    : `${rawApiUrl.replace(/\/$/, "")}/api`;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
