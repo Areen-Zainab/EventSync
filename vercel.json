@@ -1,12 +1,12 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm run build",
-  "devCommand": "cd frontend && npm run dev",
-  "outputDirectory": "frontend/.next",
-  "installCommand": "npm install --prefix ./frontend",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
   "framework": "nextjs",
   "functions": {
-    "frontend/**/*.ts": {
+    "**/*.ts": {
       "memory": 1024,
       "maxDuration": 60
     }
