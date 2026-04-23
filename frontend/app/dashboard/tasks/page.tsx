@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 import {
   DragDropContext,
@@ -66,7 +65,6 @@ export default function TasksPage() {
   /** After a drag, the browser still fires a click on the card — suppress opening the detail panel. */
   const suppressTaskCardClickRef = useRef(false);
 
-  const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -223,46 +221,53 @@ export default function TasksPage() {
   }, []);
 
   useEffect(() => {
-    const taskIdFromQuery = searchParams.get("taskId");
-    const eventIdFromQuery = searchParams.get("eventId");
-    const statusFromQuery = searchParams.get("status");
+    const syncFromQuery = () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const taskIdFromQuery = searchParams.get("taskId");
+      const eventIdFromQuery = searchParams.get("eventId");
+      const statusFromQuery = searchParams.get("status");
 
-    if (taskIdFromQuery) {
-      const taskExists = tasks.some((task) => task.id === taskIdFromQuery);
-      if (taskExists) {
-        setSelectedTaskId(taskIdFromQuery);
-        setDraft(null);
+      if (taskIdFromQuery) {
+        const taskExists = tasks.some((task) => task.id === taskIdFromQuery);
+        if (taskExists) {
+          setSelectedTaskId(taskIdFromQuery);
+          setDraft(null);
+        }
+        return;
       }
-      return;
-    }
 
-    if (!eventIdFromQuery && !statusFromQuery) return;
+      if (!eventIdFromQuery && !statusFromQuery) return;
 
-    const statusMap: Record<string, TaskStatus> = {
-      todo: "pending",
-      inProgress: "in_progress",
-      done: "done",
-      pending: "pending",
-      in_progress: "in_progress",
+      const statusMap: Record<string, TaskStatus> = {
+        todo: "pending",
+        inProgress: "in_progress",
+        done: "done",
+        pending: "pending",
+        in_progress: "in_progress",
+      };
+      const resolvedStatus = statusMap[statusFromQuery || ""] || "pending";
+      const resolvedEventId =
+        eventIdFromQuery && availableEvents.some((eventItem) => eventItem.id === eventIdFromQuery)
+          ? eventIdFromQuery
+          : availableEvents[0]?.id || "";
+
+      setCreateTargetStatus(resolvedStatus);
+      setSelectedTaskId(null);
+      setDraft({
+        event_id: resolvedEventId,
+        title: "",
+        description: "",
+        assigned_to: "",
+        due_date: "",
+        priority: "medium",
+        status: resolvedStatus,
+      });
     };
-    const resolvedStatus = statusMap[statusFromQuery || ""] || "pending";
-    const resolvedEventId =
-      eventIdFromQuery && availableEvents.some((eventItem) => eventItem.id === eventIdFromQuery)
-        ? eventIdFromQuery
-        : availableEvents[0]?.id || "";
 
-    setCreateTargetStatus(resolvedStatus);
-    setSelectedTaskId(null);
-    setDraft({
-      event_id: resolvedEventId,
-      title: "",
-      description: "",
-      assigned_to: "",
-      due_date: "",
-      priority: "medium",
-      status: resolvedStatus,
-    });
-  }, [searchParams, tasks, availableEvents]);
+    syncFromQuery();
+    window.addEventListener("popstate", syncFromQuery);
+    return () => window.removeEventListener("popstate", syncFromQuery);
+  }, [tasks, availableEvents]);
 
   const startCreateTask = (status: TaskStatus): void => {
     setCreateTargetStatus(status);

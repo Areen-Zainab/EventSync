@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Sidebar from "@/components/Sidebar";
 import TaskDeadlineReminder from "@/components/TaskDeadlineReminder";
 
@@ -5,7 +6,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
       <TaskDeadlineReminder />
-      <Sidebar />
+      <Suspense fallback={null}>
+        <Sidebar />
+      </Suspense>
       <main style={{ flex: 1, overflow: 'auto' }}>
         {children}
       </main>

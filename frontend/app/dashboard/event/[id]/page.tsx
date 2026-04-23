@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
@@ -187,7 +187,6 @@ const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
 
 export default function EventOverviewPage() {
   const params = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const eventId = params?.id;
 
@@ -240,15 +239,22 @@ export default function EventOverviewPage() {
   }, [eventData, currentUserId]);
 
   useEffect(() => {
-    const tabParam = searchParams.get("tab");
-    if (!tabParam) {
-      setTab("Overview");
-      return;
-    }
+    const syncFromQuery = () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const tabParam = searchParams.get("tab");
+      if (!tabParam) {
+        setTab("Overview");
+        return;
+      }
 
-    const matchedTab = tabs.find((t) => t.toLowerCase() === tabParam.toLowerCase());
-    setTab(matchedTab || "Overview");
-  }, [searchParams]);
+      const matchedTab = tabs.find((t) => t.toLowerCase() === tabParam.toLowerCase());
+      setTab(matchedTab || "Overview");
+    };
+
+    syncFromQuery();
+    window.addEventListener("popstate", syncFromQuery);
+    return () => window.removeEventListener("popstate", syncFromQuery);
+  }, []);
 
   const selectTab = (nextTab: (typeof tabs)[number]) => {
     setTab(nextTab);
