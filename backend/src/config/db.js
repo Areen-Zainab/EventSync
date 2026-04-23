@@ -2,13 +2,29 @@ const fs = require('fs');
 const path = require('path');
 const { Pool, Client } = require('pg');
 
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  port: Number(process.env.DB_PORT) || 5432,
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'eventsync',
+const getDbConfig = () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const hasConnectionString = Boolean(process.env.DATABASE_URL);
+
+  if (hasConnectionString) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+      // Managed Postgres providers (Railway/Render/etc.) commonly require SSL in production.
+      ssl: isProduction ? { rejectUnauthorized: false } : false,
+    };
+  }
+
+  return {
+    host: process.env.DB_HOST || process.env.PGHOST || 'localhost',
+    port: Number(process.env.DB_PORT || process.env.PGPORT) || 5432,
+    user: process.env.DB_USER || process.env.PGUSER || 'postgres',
+    password: process.env.DB_PASSWORD || process.env.PGPASSWORD,
+    database: process.env.DB_NAME || process.env.PGDATABASE || 'eventsync',
+    ssl: isProduction ? { rejectUnauthorized: false } : false,
+  };
 };
+
+const dbConfig = getDbConfig();
 
 let pool = new Pool(dbConfig);
 let schemaInitialized = false;
@@ -19,6 +35,10 @@ const createPool = () => {
 };
 
 const createDatabaseIfMissing = async () => {
+  if (dbConfig.connectionString) {
+    throw new Error('Automatic database creation is not supported when DATABASE_URL is used.');
+  }
+
   const adminClient = new Client({
     host: dbConfig.host,
     port: dbConfig.port,
