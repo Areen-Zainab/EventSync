@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const isDev = process.env.NODE_ENV !== "production";
 
+// Allow connections to both localhost (dev) and production API URLs
 const csp = [
 	"default-src 'self'",
 	"base-uri 'self'",
@@ -11,7 +12,7 @@ const csp = [
 	"font-src 'self' https://fonts.gstatic.com data:",
 	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
 	`script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-	"connect-src 'self' http://localhost:5000 https:",
+	"connect-src 'self' http://localhost:5000 https: wss:",
 ].join('; ');
 
 const nextConfig: NextConfig = {
