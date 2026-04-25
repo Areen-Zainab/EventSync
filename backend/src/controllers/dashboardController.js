@@ -58,12 +58,24 @@ const getDashboardOverview = async (req, res, next) => {
       loadAccessibleEvents(userId),
       query(
         `SELECT t.*,
-                assignee.name AS assignee_name,
-                assignee.email AS assignee_email,
+                COALESCE(assignee_meta.assigned_to_ids, ARRAY[]::uuid[]) AS assigned_to_ids,
+                COALESCE(assignee_meta.assignee_names, ARRAY[]::text[]) AS assignee_names,
+                COALESCE(assignee_meta.assignees, '[]'::json) AS assignees,
+                COALESCE(assignee_meta.assignee_names[1], assignee.name) AS assignee_name,
+                COALESCE(assignee_meta.assignee_emails[1], assignee.email) AS assignee_email,
                 e.name AS event_name
          FROM tasks t
          JOIN events e ON e.id = t.event_id
          JOIN event_members access ON access.event_id = e.id AND access.user_id = $1
+         LEFT JOIN LATERAL (
+           SELECT ARRAY_AGG(ta.user_id ORDER BY u.name, u.id) AS assigned_to_ids,
+                  ARRAY_AGG(u.name ORDER BY u.name, u.id) AS assignee_names,
+                  ARRAY_AGG(u.email ORDER BY u.name, u.id) AS assignee_emails,
+                  JSON_AGG(JSON_BUILD_OBJECT('id', u.id, 'name', u.name, 'email', u.email) ORDER BY u.name, u.id) AS assignees
+           FROM task_assignees ta
+           JOIN users u ON u.id = ta.user_id
+           WHERE ta.task_id = t.id
+         ) assignee_meta ON TRUE
          LEFT JOIN users assignee ON assignee.id = t.assigned_to
          WHERE t.status <> 'done'
            AND t.due_date IS NOT NULL
@@ -74,12 +86,24 @@ const getDashboardOverview = async (req, res, next) => {
       ),
       query(
         `SELECT t.*,
-                assignee.name AS assignee_name,
-                assignee.email AS assignee_email,
+                COALESCE(assignee_meta.assigned_to_ids, ARRAY[]::uuid[]) AS assigned_to_ids,
+                COALESCE(assignee_meta.assignee_names, ARRAY[]::text[]) AS assignee_names,
+                COALESCE(assignee_meta.assignees, '[]'::json) AS assignees,
+                COALESCE(assignee_meta.assignee_names[1], assignee.name) AS assignee_name,
+                COALESCE(assignee_meta.assignee_emails[1], assignee.email) AS assignee_email,
                 e.name AS event_name
          FROM tasks t
          JOIN events e ON e.id = t.event_id
          JOIN event_members access ON access.event_id = e.id AND access.user_id = $1
+         LEFT JOIN LATERAL (
+           SELECT ARRAY_AGG(ta.user_id ORDER BY u.name, u.id) AS assigned_to_ids,
+                  ARRAY_AGG(u.name ORDER BY u.name, u.id) AS assignee_names,
+                  ARRAY_AGG(u.email ORDER BY u.name, u.id) AS assignee_emails,
+                  JSON_AGG(JSON_BUILD_OBJECT('id', u.id, 'name', u.name, 'email', u.email) ORDER BY u.name, u.id) AS assignees
+           FROM task_assignees ta
+           JOIN users u ON u.id = ta.user_id
+           WHERE ta.task_id = t.id
+         ) assignee_meta ON TRUE
          LEFT JOIN users assignee ON assignee.id = t.assigned_to
          WHERE t.status <> 'done'
            AND t.due_date IS NOT NULL
@@ -110,11 +134,19 @@ const getDashboardOverview = async (req, res, next) => {
            SELECT 'task' AS activity_type,
                   t.updated_at AS created_at,
                   t.title AS title,
-                  assignee.name AS actor_name,
+                COALESCE(primary_assignee.name, assignee.name) AS actor_name,
                   e.name AS event_name
            FROM tasks t
            JOIN events e ON e.id = t.event_id
            JOIN event_members access ON access.event_id = e.id AND access.user_id = $1
+              LEFT JOIN LATERAL (
+                SELECT u.name
+                FROM task_assignees ta
+                JOIN users u ON u.id = ta.user_id
+                WHERE ta.task_id = t.id
+                ORDER BY u.name, u.id
+                LIMIT 1
+              ) primary_assignee ON TRUE
            LEFT JOIN users assignee ON assignee.id = t.assigned_to
            WHERE t.updated_at >= NOW() - INTERVAL '14 days'
 

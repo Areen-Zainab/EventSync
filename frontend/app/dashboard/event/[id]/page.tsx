@@ -12,7 +12,10 @@ type TaskPriority = "low" | "medium" | "high";
 type EventTask = {
   id: string;
   title: string;
+  assigned_to: string | null;
+  assigned_to_ids: string[];
   assignee_name: string | null;
+  assignee_names: string[];
   due_date: string | null;
   status: TaskStatus;
 };
@@ -23,6 +26,7 @@ type TaskDetail = {
   title: string;
   description: string | null;
   assigned_to: string | null;
+  assigned_to_ids: string[];
   status: TaskStatus;
   due_date: string | null;
   priority: TaskPriority;
@@ -180,8 +184,8 @@ const toDateInputValue = (value: string | null): string => {
 };
 
 const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
-  const total = tasks.filter((task) => task.assignee_name === memberName).length;
-  const done = tasks.filter((task) => task.assignee_name === memberName && task.status === "done").length;
+  const total = tasks.filter((task) => (task.assignee_names || []).includes(memberName)).length;
+  const done = tasks.filter((task) => (task.assignee_names || []).includes(memberName) && task.status === "done").length;
   return { total, done };
 };
 
@@ -203,11 +207,12 @@ export default function EventOverviewPage() {
   const [taskDraft, setTaskDraft] = useState<{
     title: string;
     description: string;
-    assigned_to: string;
+    assigned_to_ids: string[];
     due_date: string;
     priority: TaskPriority;
     status: TaskStatus;
   } | null>(null);
+  const [personalViewOnly, setPersonalViewOnly] = useState(false);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
   const [extractingTasks, setExtractingTasks] = useState(false);
@@ -238,6 +243,22 @@ export default function EventOverviewPage() {
     return me.role !== "Member";
   }, [eventData, currentUserId]);
 
+  const visibleTaskBuckets = useMemo(() => {
+    if (!eventData) {
+      return { todo: [] as EventTask[], inProgress: [] as EventTask[], done: [] as EventTask[] };
+    }
+    if (!personalViewOnly || !currentUserId) {
+      return eventData.tasks;
+    }
+
+    const includeMine = (task: EventTask) => (task.assigned_to_ids || []).includes(currentUserId);
+    return {
+      todo: eventData.tasks.todo.filter(includeMine),
+      inProgress: eventData.tasks.inProgress.filter(includeMine),
+      done: eventData.tasks.done.filter(includeMine),
+    };
+  }, [eventData, personalViewOnly, currentUserId]);
+
   useEffect(() => {
     const syncFromQuery = () => {
       const searchParams = new URLSearchParams(window.location.search);
@@ -265,7 +286,7 @@ export default function EventOverviewPage() {
   const createDraftFromTask = (task: TaskDetail) => ({
     title: task.title || "",
     description: task.description || "",
-    assigned_to: task.assigned_to || "",
+    assigned_to_ids: task.assigned_to_ids || (task.assigned_to ? [task.assigned_to] : []),
     due_date: toDateInputValue(task.due_date),
     priority: task.priority || "medium",
     status: task.status || "pending",
@@ -301,7 +322,7 @@ export default function EventOverviewPage() {
     setTaskDraft({
       title: "",
       description: "",
-      assigned_to: "",
+      assigned_to_ids: [],
       due_date: "",
       priority: "medium",
       status,
@@ -334,7 +355,7 @@ export default function EventOverviewPage() {
       event_id: eventData.id,
       title: taskDraft.title.trim(),
       description: taskDraft.description || null,
-      assigned_to: taskDraft.assigned_to || null,
+      assigned_to_ids: taskDraft.assigned_to_ids,
       due_date: taskDraft.due_date || null,
       priority: taskDraft.priority,
       status: taskDraft.status,
@@ -961,6 +982,21 @@ export default function EventOverviewPage() {
         {tab === "Tasks" && (
           <div style={{ padding: "24px 32px" }}>
             {taskError && <p style={{ color: "var(--overdue)", marginBottom: 12, fontSize: "0.8rem" }}>{taskError}</p>}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+              <button
+                type="button"
+                className="btn-ghost px-3 py-1.5 text-xs"
+                onClick={() => setPersonalViewOnly((prev) => !prev)}
+                style={{
+                  borderColor: personalViewOnly ? "var(--accent)" : undefined,
+                  color: personalViewOnly ? "var(--accent)" : undefined,
+                  background: personalViewOnly ? "rgba(124,92,252,0.12)" : undefined,
+                }}
+                title="Show only tasks assigned to you"
+              >
+                👤 {personalViewOnly ? "Personal view: ON" : "Personal view"}
+              </button>
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: taskDraft ? "1fr 320px" : "1fr", gap: 20 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
               {[
@@ -982,11 +1018,11 @@ export default function EventOverviewPage() {
                         borderRadius: 99,
                       }}
                     >
-                      {eventData.tasks[key].length}
+                      {visibleTaskBuckets[key].length}
                     </span>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {eventData.tasks[key].map((task) => (
+                    {visibleTaskBuckets[key].map((task) => (
                       <div
                         key={task.id}
                         className="card card-hover"
@@ -1000,16 +1036,20 @@ export default function EventOverviewPage() {
                       >
                         <p style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text-1)", marginBottom: 8 }}>{task.title}</p>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>{task.assignee_name || "Unassigned"}</span>
+                          <span style={{ fontSize: "0.72rem", color: "var(--text-3)" }}>
+                            {task.assignee_names?.length ? task.assignee_names.join(", ") : task.assignee_name || "Unassigned"}
+                          </span>
                           <span style={{ fontSize: "0.7rem", color: key === "todo" ? "var(--at-risk)" : "var(--text-3)" }}>
                             📅 {formatTaskDue(task.due_date)}
                           </span>
                         </div>
                       </div>
                     ))}
-                    {eventData.tasks[key].length === 0 && (
+                    {visibleTaskBuckets[key].length === 0 && (
                       <div className="card" style={{ padding: "12px 14px", borderStyle: "dashed" }}>
-                        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-3)" }}>No tasks in this column.</p>
+                        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-3)" }}>
+                          {personalViewOnly ? "No personal tasks in this column." : "No tasks in this column."}
+                        </p>
                         <button
                           type="button"
                           onClick={() => startCreateTask(key === "todo" ? "pending" : key === "inProgress" ? "in_progress" : "done")}
@@ -1075,14 +1115,25 @@ export default function EventOverviewPage() {
 
                     <div>
                       <p style={{ color: "var(--text-3)", marginBottom: 4 }}>Assigned To</p>
-                      <select className="input" value={taskDraft.assigned_to} onChange={(e) => setTaskDraft((prev) => (prev ? { ...prev, assigned_to: e.target.value } : prev))}>
-                        <option value="">Unassigned</option>
+                      <select
+                        className="input"
+                        multiple
+                        value={taskDraft.assigned_to_ids}
+                        onChange={(e) => {
+                          const nextAssignedIds = Array.from(e.target.selectedOptions).map((option) => option.value);
+                          setTaskDraft((prev) => (prev ? { ...prev, assigned_to_ids: nextAssignedIds } : prev));
+                        }}
+                        style={{ minHeight: 110 }}
+                      >
                         {eventData.members.map((member) => (
                           <option key={member.user_id} value={member.user_id}>
                             {member.name} ({member.role})
                           </option>
                         ))}
                       </select>
+                      <p style={{ margin: "6px 0 0", fontSize: "0.7rem", color: "var(--text-3)" }}>
+                        Tip: Hold Ctrl (or Cmd on Mac) to select multiple members.
+                      </p>
                     </div>
 
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>

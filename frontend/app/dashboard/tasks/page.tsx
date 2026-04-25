@@ -20,6 +20,8 @@ type Task = {
   title: string;
   description: string | null;
   assigned_to: string | null;
+  assigned_to_ids: string[];
+  assignee_names: string[];
   status: TaskStatus;
   due_date: string | null;
   priority: TaskPriority;
@@ -73,6 +75,7 @@ export default function TasksPage() {
   const [error, setError] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterMode>("all");
   const [sortMode, setSortMode] = useState<SortMode>("deadline");
+  const [personalViewOnly, setPersonalViewOnly] = useState(false);
   const [createTargetStatus, setCreateTargetStatus] = useState<TaskStatus>("pending");
   const [draft, setDraft] = useState<{
     event_id: string;
@@ -123,7 +126,7 @@ export default function TasksPage() {
     event_id: task?.event_id || availableEvents[0]?.id || "",
     title: task?.title || "",
     description: task?.description || "",
-    assigned_to: task?.assigned_to || "",
+    assigned_to: task?.assigned_to_ids?.length ? task.assigned_to_ids.join(",") : task?.assigned_to || "",
     due_date: task?.due_date ? task.due_date.slice(0, 10) : "",
     priority: task?.priority || "medium",
     status: task?.status || "pending",
@@ -131,8 +134,8 @@ export default function TasksPage() {
 
   const applyFiltersAndSort = (inputTasks: Task[]): Task[] => {
     let nextTasks = [...inputTasks];
-    if (activeFilter === "my_tasks" && currentUserId) {
-      nextTasks = nextTasks.filter((task) => task.assigned_to === currentUserId);
+    if ((activeFilter === "my_tasks" || personalViewOnly) && currentUserId) {
+      nextTasks = nextTasks.filter((task) => (task.assigned_to_ids || []).includes(currentUserId));
     }
     if (activeFilter === "at_risk") {
       const now = Date.now();
@@ -146,7 +149,9 @@ export default function TasksPage() {
 
     nextTasks.sort((a, b) => {
       if (activeFilter === "by_member" || sortMode === "assignee") {
-        return (a.assigned_to || "unassigned").localeCompare(b.assigned_to || "unassigned");
+        const aAssignee = a.assignee_names?.[0] || a.assigned_to || "unassigned";
+        const bAssignee = b.assignee_names?.[0] || b.assigned_to || "unassigned";
+        return aAssignee.localeCompare(bAssignee);
       }
       if (activeFilter === "by_deadline" || sortMode === "deadline") {
         const aTime = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER;
@@ -163,7 +168,10 @@ export default function TasksPage() {
     return nextTasks;
   };
 
-  const filteredTasks = useMemo(() => applyFiltersAndSort(tasks), [tasks, activeFilter, sortMode, currentUserId]);
+  const filteredTasks = useMemo(
+    () => applyFiltersAndSort(tasks),
+    [tasks, activeFilter, sortMode, currentUserId, personalViewOnly]
+  );
 
   const groupedTasks = useMemo(
     () => ({
@@ -312,7 +320,10 @@ export default function TasksPage() {
         event_id: draft.event_id || null,
         title: draft.title.trim(),
         description: draft.description || null,
-        assigned_to: draft.assigned_to || null,
+        assigned_to_ids: draft.assigned_to
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
         due_date: draft.due_date || null,
         priority: draft.priority,
         status: draft.status || createTargetStatus,
@@ -424,7 +435,21 @@ export default function TasksPage() {
           <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>Task Board</h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-2)' }}>All tasks across your events</p>
         </div>
-        <button className="btn-primary text-sm px-4 py-2.5" onClick={() => startCreateTask("pending")}>+ Add Task</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button
+            className="btn-ghost px-3 py-1.5 text-xs"
+            onClick={() => setPersonalViewOnly((prev) => !prev)}
+            style={{
+              borderColor: personalViewOnly ? 'var(--accent)' : undefined,
+              color: personalViewOnly ? 'var(--accent)' : undefined,
+              background: personalViewOnly ? 'rgba(124,92,252,0.12)' : undefined,
+            }}
+            title="Show only tasks assigned to you"
+          >
+            👤 {personalViewOnly ? 'Personal view: ON' : 'Personal view'}
+          </button>
+          <button className="btn-primary text-sm px-4 py-2.5" onClick={() => startCreateTask("pending")}>+ Add Task</button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -498,8 +523,10 @@ export default function TasksPage() {
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent), var(--accent-3))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 700, color: '#fff' }}>{(task.assigned_to || "U")[0]}</div>
-                                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{task.assigned_to ? task.assigned_to.slice(0, 8) : "Unassigned"}</span>
+                                <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent), var(--accent-3))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem', fontWeight: 700, color: '#fff' }}>{((task.assignee_names?.[0] || task.assigned_to || "U")[0] || "U").toUpperCase()}</div>
+                                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>
+                                  {task.assignee_names?.length ? task.assignee_names.join(', ') : task.assigned_to ? task.assigned_to.slice(0, 8) : "Unassigned"}
+                                </span>
                               </div>
                               <span style={{ fontSize: '0.65rem', color: 'var(--text-3)' }}>{formatDate(task.due_date)}</span>
                             </div>
@@ -555,12 +582,12 @@ export default function TasksPage() {
               </div>
 
               <div>
-                <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Assigned To (User ID)</p>
+                <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Assigned To (User IDs, comma separated)</p>
                 <input
                   className="input"
-                  value={draft ? draft.assigned_to : (selectedTask?.assigned_to || "")}
+                  value={draft ? draft.assigned_to : (selectedTask?.assigned_to_ids?.join(",") || selectedTask?.assigned_to || "")}
                   onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), assigned_to: e.target.value }))}
-                  placeholder="Leave blank for unassigned"
+                  placeholder="Example: id-1,id-2"
                 />
               </div>
 

@@ -14,6 +14,21 @@ ADD COLUMN IF NOT EXISTS priority VARCHAR(20) NOT NULL DEFAULT 'medium';
 ALTER TABLE tasks
 ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+CREATE TABLE IF NOT EXISTS task_assignees (
+  task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  assigned_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (task_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees (user_id);
+
+INSERT INTO task_assignees (task_id, user_id)
+SELECT t.id, t.assigned_to
+FROM tasks t
+WHERE t.assigned_to IS NOT NULL
+ON CONFLICT (task_id, user_id) DO NOTHING;
+
 ALTER TABLE event_members
 ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 

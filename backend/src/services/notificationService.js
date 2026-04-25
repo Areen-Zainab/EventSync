@@ -272,16 +272,26 @@ const checkTaskDeadlines = async () => {
         t.title,
         t.due_date,
         t.assigned_to,
+        COALESCE(assignee_meta.assignee_ids, ARRAY[]::uuid[]) AS assignee_ids,
         t.created_by,
         t.event_id,
         e.name as event_name
        FROM tasks t
+       LEFT JOIN LATERAL (
+         SELECT ARRAY_AGG(ta.user_id) AS assignee_ids
+         FROM task_assignees ta
+         WHERE ta.task_id = t.id
+       ) assignee_meta ON TRUE
        LEFT JOIN events e ON e.id = t.event_id
        WHERE t.status != 'done'
          AND t.due_date IS NOT NULL
          AND t.due_date <= $1
          AND t.due_date >= $2
-         AND (t.assigned_to IS NOT NULL OR t.created_by IS NOT NULL)`,
+         AND (
+           COALESCE(array_length(assignee_meta.assignee_ids, 1), 0) > 0
+           OR t.assigned_to IS NOT NULL
+           OR t.created_by IS NOT NULL
+         )`,
       [tomorrow, now]
     );
 
@@ -291,7 +301,7 @@ const checkTaskDeadlines = async () => {
       const dueDate = new Date(task.due_date);
       const hoursUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60));
       
-      const userIds = [task.assigned_to, task.created_by].filter(Boolean);
+      const userIds = [...(task.assignee_ids || []), task.assigned_to, task.created_by].filter(Boolean);
       const uniqueUserIds = [...new Set(userIds)];
 
       for (const userId of uniqueUserIds) {
@@ -340,15 +350,25 @@ const checkOverdueTasks = async () => {
         t.title,
         t.due_date,
         t.assigned_to,
+        COALESCE(assignee_meta.assignee_ids, ARRAY[]::uuid[]) AS assignee_ids,
         t.created_by,
         t.event_id,
         e.name as event_name
        FROM tasks t
+       LEFT JOIN LATERAL (
+         SELECT ARRAY_AGG(ta.user_id) AS assignee_ids
+         FROM task_assignees ta
+         WHERE ta.task_id = t.id
+       ) assignee_meta ON TRUE
        LEFT JOIN events e ON e.id = t.event_id
        WHERE t.status != 'done'
          AND t.due_date IS NOT NULL
          AND t.due_date < $1
-         AND (t.assigned_to IS NOT NULL OR t.created_by IS NOT NULL)`,
+         AND (
+           COALESCE(array_length(assignee_meta.assignee_ids, 1), 0) > 0
+           OR t.assigned_to IS NOT NULL
+           OR t.created_by IS NOT NULL
+         )`,
       [now]
     );
 
@@ -358,7 +378,7 @@ const checkOverdueTasks = async () => {
       const dueDate = new Date(task.due_date);
       const daysOverdue = Math.floor((now - dueDate) / (1000 * 60 * 60 * 24));
       
-      const userIds = [task.assigned_to, task.created_by].filter(Boolean);
+      const userIds = [...(task.assignee_ids || []), task.assigned_to, task.created_by].filter(Boolean);
       const uniqueUserIds = [...new Set(userIds)];
 
       for (const userId of uniqueUserIds) {

@@ -265,25 +265,120 @@ const extractTasksWithAI = async (messages) => {
   }
 };
 
-const sanitizeTask = (row) => ({
-  id: row.id,
-  event_id: row.event_id,
-  created_by: row.created_by,
-  title: row.title,
-  description: row.description,
-  assigned_to: row.assigned_to,
-  status: row.status,
-  due_date: row.due_date,
-  priority: row.priority,
-  created_at: row.created_at,
-  updated_at: row.updated_at,
-});
+const sanitizeTask = (row) => {
+  const assignedToIds = Array.isArray(row.assigned_to_ids) ? row.assigned_to_ids.filter(Boolean) : [];
+  const assigneeNames = Array.isArray(row.assignee_names) ? row.assignee_names.filter(Boolean) : [];
+  const assignees = Array.isArray(row.assignees) ? row.assignees : [];
+
+  return {
+    id: row.id,
+    event_id: row.event_id,
+    created_by: row.created_by,
+    title: row.title,
+    description: row.description,
+    assigned_to: row.assigned_to || assignedToIds[0] || null,
+    assigned_to_ids: assignedToIds,
+    assignee_name: assigneeNames[0] || row.assignee_name || null,
+    assignee_names: assigneeNames,
+    assignees,
+    status: row.status,
+    due_date: row.due_date,
+    priority: row.priority,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+};
+
+const isUuid = (value) =>
+  typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+const normalizeAssignedUserIds = (values) =>
+  [...new Set((values || []).map((value) => String(value || '').trim()).filter((value) => isUuid(value)))];
+
+const resolveAssignedUserIds = ({ assigned_to, assigned_to_ids }) => {
+  if (Array.isArray(assigned_to_ids)) {
+    return normalizeAssignedUserIds(assigned_to_ids);
+  }
+  return normalizeAssignedUserIds([assigned_to]);
+};
+
+const TASK_ASSIGNEE_FIELDS = `
+  COALESCE(assignee_meta.assigned_to_ids, ARRAY[]::uuid[]) AS assigned_to_ids,
+  COALESCE(assignee_meta.assignee_names, ARRAY[]::text[]) AS assignee_names,
+  COALESCE(assignee_meta.assignees, '[]'::json) AS assignees
+`;
+
+const TASK_ASSIGNEE_JOIN = `
+  LEFT JOIN LATERAL (
+    SELECT ARRAY_AGG(ta.user_id ORDER BY u.name, u.id) AS assigned_to_ids,
+           ARRAY_AGG(u.name ORDER BY u.name, u.id) AS assignee_names,
+           JSON_AGG(JSON_BUILD_OBJECT('id', u.id, 'name', u.name, 'email', u.email) ORDER BY u.name, u.id) AS assignees
+    FROM task_assignees ta
+    JOIN users u ON u.id = ta.user_id
+    WHERE ta.task_id = t.id
+  ) assignee_meta ON TRUE
+`;
+
+const ensureUsersExist = async (userIds) => {
+  if (!userIds.length) return true;
+
+  const result = await query(
+    `SELECT COUNT(*)::int AS matched
+     FROM users
+     WHERE id = ANY($1::uuid[])`,
+    [userIds]
+  );
+
+  return Number(result.rows[0]?.matched || 0) === userIds.length;
+};
+
+const ensureAssigneesBelongToEvent = async (eventId, userIds) => {
+  if (!eventId || userIds.length === 0) return true;
+
+  const result = await query(
+    `SELECT COUNT(*)::int AS matched
+     FROM event_members
+     WHERE event_id = $1
+       AND user_id = ANY($2::uuid[])`,
+    [eventId, userIds]
+  );
+
+  return Number(result.rows[0]?.matched || 0) === userIds.length;
+};
+
+const syncTaskAssignees = async (taskId, userIds) => {
+  await query('DELETE FROM task_assignees WHERE task_id = $1', [taskId]);
+
+  if (!userIds.length) return;
+
+  await query(
+    `INSERT INTO task_assignees (task_id, user_id)
+     SELECT $1, UNNEST($2::uuid[])
+     ON CONFLICT (task_id, user_id) DO NOTHING`,
+    [taskId, userIds]
+  );
+};
+
+const loadTaskWithAssignees = async (taskId) => {
+  const result = await query(
+    `SELECT t.*,
+            ${TASK_ASSIGNEE_FIELDS}
+     FROM tasks t
+     ${TASK_ASSIGNEE_JOIN}
+     WHERE t.id = $1`,
+    [taskId]
+  );
+
+  return result.rows[0] || null;
+};
 
 const ensureTaskAccess = async (userId, taskId) => {
   const result = await query(
-    `SELECT DISTINCT t.*
+    `SELECT DISTINCT t.*,
+            ${TASK_ASSIGNEE_FIELDS}
      FROM tasks t
      LEFT JOIN event_members em ON em.event_id = t.event_id
+     ${TASK_ASSIGNEE_JOIN}
      WHERE t.id = $1
        AND (t.created_by = $2 OR em.user_id = $2)`,
     [taskId, userId]
@@ -305,8 +400,9 @@ const ensureEventAccess = async (userId, eventId) => {
 // POST /api/tasks
 const createTask = async (req, res, next) => {
   try {
-    const { event_id, title, description, assigned_to, status, due_date, priority } = req.body;
+    const { event_id, title, description, assigned_to, assigned_to_ids, status, due_date, priority } = req.body;
     const userId = req.user.id;
+    const assignedUserIds = resolveAssignedUserIds({ assigned_to, assigned_to_ids });
 
     if (!title || !String(title).trim()) {
       return res.status(400).json({ success: false, message: 'title is required.' });
@@ -317,6 +413,16 @@ const createTask = async (req, res, next) => {
       if (!hasEventAccess) {
         return res.status(403).json({ success: false, message: 'You do not have access to this event.' });
       }
+
+      const assigneesInEvent = await ensureAssigneesBelongToEvent(event_id, assignedUserIds);
+      if (!assigneesInEvent) {
+        return res.status(400).json({ success: false, message: 'All assignees must belong to the selected event.' });
+      }
+    }
+
+    const assigneesExist = await ensureUsersExist(assignedUserIds);
+    if (!assigneesExist) {
+      return res.status(400).json({ success: false, message: 'One or more assignees are invalid.' });
     }
 
     const normalizedStatus = status || 'pending';
@@ -339,7 +445,7 @@ const createTask = async (req, res, next) => {
         userId,
         String(title).trim(),
         description || null,
-        assigned_to || null,
+        assignedUserIds[0] || null,
         normalizedStatus,
         due_date || null,
         normalizedPriority,
@@ -347,11 +453,14 @@ const createTask = async (req, res, next) => {
     );
 
     const createdTask = result.rows[0];
+    await syncTaskAssignees(createdTask.id, assignedUserIds);
+    const hydratedTask = await loadTaskWithAssignees(createdTask.id);
 
-    // Send notification if task is assigned to someone
-    if (assigned_to && assigned_to !== userId) {
+    for (const assignedUserId of assignedUserIds) {
+      if (assignedUserId === userId) continue;
+
       await sendNotification({
-        userId: assigned_to,
+        userId: assignedUserId,
         type: 'task_assigned',
         title: 'New Task Assigned',
         body: `You have been assigned: "${String(title).trim()}"`,
@@ -361,7 +470,7 @@ const createTask = async (req, res, next) => {
       });
     }
 
-    return res.status(201).json({ success: true, task: sanitizeTask(createdTask) });
+    return res.status(201).json({ success: true, task: sanitizeTask(hydratedTask || createdTask) });
   } catch (err) {
     return next(err);
   }
@@ -371,7 +480,7 @@ const createTask = async (req, res, next) => {
 const getTasks = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { event_id, status } = req.query;
+    const { event_id, status, assigned_to_me } = req.query;
 
     if (status && !VALID_STATUSES.has(status)) {
       return res.status(400).json({ success: false, message: 'Invalid status filter.' });
@@ -390,10 +499,22 @@ const getTasks = async (req, res, next) => {
       whereClause += ` AND t.status = $${params.length}`;
     }
 
+    if (assigned_to_me === 'true') {
+      params.push(userId);
+      whereClause += ` AND EXISTS (
+        SELECT 1
+        FROM task_assignees ta_me
+        WHERE ta_me.task_id = t.id
+          AND ta_me.user_id = $${params.length}
+      )`;
+    }
+
     const result = await query(
-      `SELECT DISTINCT t.*
+      `SELECT DISTINCT t.*,
+              ${TASK_ASSIGNEE_FIELDS}
        FROM tasks t
        LEFT JOIN event_members em ON em.event_id = t.event_id
+       ${TASK_ASSIGNEE_JOIN}
        ${whereClause}
        ORDER BY t.created_at DESC`,
       params
@@ -434,18 +555,38 @@ const updateTask = async (req, res, next) => {
       title,
       description,
       assigned_to,
+      assigned_to_ids,
       status,
       due_date,
       priority,
       event_id,
     } = req.body;
     const shouldUpdateEventId = Object.prototype.hasOwnProperty.call(req.body, 'event_id');
+    const hasAssignedToUpdate =
+      Object.prototype.hasOwnProperty.call(req.body, 'assigned_to') ||
+      Object.prototype.hasOwnProperty.call(req.body, 'assigned_to_ids');
+
+    const targetEventId = shouldUpdateEventId ? event_id || null : existingTask.event_id;
+
+    const nextAssignedUserIds = hasAssignedToUpdate
+      ? resolveAssignedUserIds({ assigned_to, assigned_to_ids })
+      : normalizeAssignedUserIds(existingTask.assigned_to_ids || [existingTask.assigned_to]);
 
     if (shouldUpdateEventId && event_id && event_id !== existingTask.event_id) {
       const hasEventAccess = await ensureEventAccess(req.user.id, event_id);
       if (!hasEventAccess) {
         return res.status(403).json({ success: false, message: 'You do not have access to this event.' });
       }
+    }
+
+    const assigneesExist = await ensureUsersExist(nextAssignedUserIds);
+    if (!assigneesExist) {
+      return res.status(400).json({ success: false, message: 'One or more assignees are invalid.' });
+    }
+
+    const assigneesInEvent = await ensureAssigneesBelongToEvent(targetEventId, nextAssignedUserIds);
+    if (!assigneesInEvent) {
+      return res.status(400).json({ success: false, message: 'All assignees must belong to the selected event.' });
     }
 
     if (status && !VALID_STATUSES.has(status)) {
@@ -473,7 +614,7 @@ const updateTask = async (req, res, next) => {
         event_id || null,
         title ? String(title).trim() : null,
         description ?? existingTask.description,
-        assigned_to ?? existingTask.assigned_to,
+        hasAssignedToUpdate ? nextAssignedUserIds[0] || null : existingTask.assigned_to,
         status || null,
         due_date ?? existingTask.due_date,
         priority || null,
@@ -481,7 +622,13 @@ const updateTask = async (req, res, next) => {
       ]
     );
 
-    return res.json({ success: true, task: sanitizeTask(result.rows[0]) });
+    if (hasAssignedToUpdate) {
+      await syncTaskAssignees(req.params.id, nextAssignedUserIds);
+    }
+
+    const hydratedTask = await loadTaskWithAssignees(req.params.id);
+
+    return res.json({ success: true, task: sanitizeTask(hydratedTask || result.rows[0]) });
   } catch (err) {
     return next(err);
   }
@@ -511,6 +658,7 @@ const updateTaskStatus = async (req, res, next) => {
     );
 
     const updatedTask = result.rows[0];
+    const hydratedTask = await loadTaskWithAssignees(taskId);
 
     // Send notification if task is completed
     if (status === 'done' && existingTask.status !== 'done') {
@@ -528,7 +676,7 @@ const updateTaskStatus = async (req, res, next) => {
       }
     }
 
-    return res.json({ success: true, task: sanitizeTask(updatedTask) });
+    return res.json({ success: true, task: sanitizeTask(hydratedTask || updatedTask) });
   } catch (err) {
     return next(err);
   }

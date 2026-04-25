@@ -119,23 +119,32 @@ const sanitizeEventRow = (row, stats = {}) => {
   };
 };
 
-const sanitizeTaskRow = (row) => ({
-  id: row.id,
-  event_id: row.event_id,
-  created_by: row.created_by,
-  title: row.title,
-  description: row.description,
-  assigned_to: row.assigned_to,
-  assignee_name: row.assignee_name || null,
-  assignee_email: row.assignee_email || null,
-  created_by_name: row.created_by_name || null,
-  event_name: row.event_name || null,
-  status: row.status,
-  due_date: toIsoDate(row.due_date),
-  priority: row.priority,
-  created_at: toIsoDate(row.created_at),
-  updated_at: toIsoDate(row.updated_at),
-});
+const sanitizeTaskRow = (row) => {
+  const assignedToIds = Array.isArray(row.assigned_to_ids) ? row.assigned_to_ids.filter(Boolean) : [];
+  const assigneeNames = Array.isArray(row.assignee_names) ? row.assignee_names.filter(Boolean) : [];
+  const assignees = Array.isArray(row.assignees) ? row.assignees : [];
+
+  return {
+    id: row.id,
+    event_id: row.event_id,
+    created_by: row.created_by,
+    title: row.title,
+    description: row.description,
+    assigned_to: row.assigned_to || assignedToIds[0] || null,
+    assigned_to_ids: assignedToIds,
+    assignee_name: assigneeNames[0] || row.assignee_name || null,
+    assignee_names: assigneeNames,
+    assignees,
+    assignee_email: row.assignee_email || null,
+    created_by_name: row.created_by_name || null,
+    event_name: row.event_name || null,
+    status: row.status,
+    due_date: toIsoDate(row.due_date),
+    priority: row.priority,
+    created_at: toIsoDate(row.created_at),
+    updated_at: toIsoDate(row.updated_at),
+  };
+};
 
 const sanitizeMemberRow = (row, currentUserId = null) => ({
   id: row.id,

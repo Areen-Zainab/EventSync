@@ -102,6 +102,15 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS task_assignees (
+  task_id      UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  assigned_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (task_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees (user_id);
+
 -- Notifications
 CREATE TABLE IF NOT EXISTS notifications (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
