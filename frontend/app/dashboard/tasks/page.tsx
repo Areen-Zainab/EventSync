@@ -122,6 +122,14 @@ export default function TasksPage() {
     return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   };
 
+  const getTodayDateInputValue = (): string => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   const buildDraftFromTask = (task: Task | null) => ({
     event_id: task?.event_id || availableEvents[0]?.id || "",
     title: task?.title || "",
@@ -301,6 +309,10 @@ export default function TasksPage() {
     if (!draft) return;
     if (!draft.title.trim()) {
       setError("Task title is required.");
+      return;
+    }
+    if (draft.due_date && draft.due_date < getTodayDateInputValue()) {
+      setError("Task deadline cannot be in the past.");
       return;
     }
     if (!token) {
@@ -594,7 +606,7 @@ export default function TasksPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
                   <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Due Date</p>
-                  <input className="input" type="date" value={draft ? draft.due_date : (selectedTask?.due_date ? selectedTask.due_date.slice(0, 10) : "")} onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), due_date: e.target.value }))} />
+                  <input className="input" type="date" min={getTodayDateInputValue()} value={draft ? draft.due_date : (selectedTask?.due_date ? selectedTask.due_date.slice(0, 10) : "")} onChange={(e) => setDraft((prev) => ({ ...(prev || buildDraftFromTask(selectedTask)), due_date: e.target.value }))} />
                 </div>
                 <div>
                   <p style={{ color: 'var(--text-3)', marginBottom: 4 }}>Priority</p>

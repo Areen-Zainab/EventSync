@@ -183,6 +183,14 @@ const toDateInputValue = (value: string | null): string => {
   return date.toISOString().slice(0, 10);
 };
 
+const getTodayDateInputValue = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const getMemberLoad = (memberName: string, tasks: EventTask[]) => {
   const total = tasks.filter((task) => (task.assignee_names || []).includes(memberName)).length;
   const done = tasks.filter((task) => (task.assignee_names || []).includes(memberName) && task.status === "done").length;
@@ -339,6 +347,11 @@ export default function EventOverviewPage() {
     if (!eventData || !taskDraft) return;
     if (!taskDraft.title.trim()) {
       setTaskError("Task title is required.");
+      return;
+    }
+
+    if (taskDraft.due_date && taskDraft.due_date < getTodayDateInputValue()) {
+      setTaskError("Task deadline cannot be in the past.");
       return;
     }
 
@@ -1139,7 +1152,7 @@ export default function EventOverviewPage() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                       <div>
                         <p style={{ color: "var(--text-3)", marginBottom: 4 }}>Due Date</p>
-                        <input className="input" type="date" value={taskDraft.due_date} onChange={(e) => setTaskDraft((prev) => (prev ? { ...prev, due_date: e.target.value } : prev))} />
+                        <input className="input" type="date" min={getTodayDateInputValue()} value={taskDraft.due_date} onChange={(e) => setTaskDraft((prev) => (prev ? { ...prev, due_date: e.target.value } : prev))} />
                       </div>
                       <div>
                         <p style={{ color: "var(--text-3)", marginBottom: 4 }}>Priority</p>

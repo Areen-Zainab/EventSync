@@ -42,6 +42,12 @@ const normalizeDueDate = (value) => {
   return formatDateOnly(parsed);
 };
 
+const isPastDueDate = (dateOnly) => {
+  if (!dateOnly) return false;
+  const today = formatDateOnly(new Date());
+  return dateOnly < today;
+};
+
 const inferDueDateFromText = (text, now = new Date()) => {
   const value = String(text || '').toLowerCase();
   if (!value.trim()) return null;
@@ -403,6 +409,7 @@ const createTask = async (req, res, next) => {
     const { event_id, title, description, assigned_to, assigned_to_ids, status, due_date, priority } = req.body;
     const userId = req.user.id;
     const assignedUserIds = resolveAssignedUserIds({ assigned_to, assigned_to_ids });
+    const normalizedDueDate = normalizeDueDate(due_date);
 
     if (!title || !String(title).trim()) {
       return res.status(400).json({ success: false, message: 'title is required.' });
@@ -436,6 +443,14 @@ const createTask = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid priority value.' });
     }
 
+    if (due_date && !normalizedDueDate) {
+      return res.status(400).json({ success: false, message: 'Invalid due_date format.' });
+    }
+
+    if (normalizedDueDate && isPastDueDate(normalizedDueDate)) {
+      return res.status(400).json({ success: false, message: 'Task deadline cannot be in the past.' });
+    }
+
     const result = await query(
       `INSERT INTO tasks (event_id, created_by, title, description, assigned_to, status, due_date, priority, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
@@ -447,7 +462,7 @@ const createTask = async (req, res, next) => {
         description || null,
         assignedUserIds[0] || null,
         normalizedStatus,
-        due_date || null,
+        normalizedDueDate,
         normalizedPriority,
       ]
     );
@@ -562,9 +577,11 @@ const updateTask = async (req, res, next) => {
       event_id,
     } = req.body;
     const shouldUpdateEventId = Object.prototype.hasOwnProperty.call(req.body, 'event_id');
+    const hasDueDateUpdate = Object.prototype.hasOwnProperty.call(req.body, 'due_date');
     const hasAssignedToUpdate =
       Object.prototype.hasOwnProperty.call(req.body, 'assigned_to') ||
       Object.prototype.hasOwnProperty.call(req.body, 'assigned_to_ids');
+    const normalizedDueDate = normalizeDueDate(due_date);
 
     const targetEventId = shouldUpdateEventId ? event_id || null : existingTask.event_id;
 
@@ -597,6 +614,14 @@ const updateTask = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Invalid priority value.' });
     }
 
+    if (hasDueDateUpdate && due_date && !normalizedDueDate) {
+      return res.status(400).json({ success: false, message: 'Invalid due_date format.' });
+    }
+
+    if (hasDueDateUpdate && normalizedDueDate && isPastDueDate(normalizedDueDate)) {
+      return res.status(400).json({ success: false, message: 'Task deadline cannot be in the past.' });
+    }
+
     const result = await query(
       `UPDATE tasks
        SET event_id = CASE WHEN $1 THEN $2 ELSE event_id END,
@@ -616,7 +641,7 @@ const updateTask = async (req, res, next) => {
         description ?? existingTask.description,
         hasAssignedToUpdate ? nextAssignedUserIds[0] || null : existingTask.assigned_to,
         status || null,
-        due_date ?? existingTask.due_date,
+        hasDueDateUpdate ? normalizedDueDate : existingTask.due_date,
         priority || null,
         req.params.id,
       ]
