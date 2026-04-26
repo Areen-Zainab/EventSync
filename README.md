@@ -4,6 +4,13 @@ EVENTSYNC is an AI-powered platform designed to simplify event management by tra
 
 ---
 
+## 🚀 Live Access
+
+- **Frontend App**: [https://event-sync-theta.vercel.app](https://event-sync-theta.vercel.app)
+- **Backend API**: [https://eventsync-production-6b02.up.railway.app](https://eventsync-production-6b02.up.railway.app)
+
+---
+
 ## Problem
 
 Event teams commonly rely on tools like WhatsApp, spreadsheets, and emails for coordination. These tools were not designed for structured execution, leading to:
