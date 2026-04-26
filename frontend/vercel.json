@@ -4,11 +4,5 @@
   "devCommand": "npm run dev",
   "outputDirectory": ".next",
   "installCommand": "npm install",
-  "framework": "nextjs",
-  "functions": {
-    "**/*.ts": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  }
+  "framework": "nextjs"
 }
