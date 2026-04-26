@@ -6,7 +6,7 @@ EVENTSYNC is an AI-powered platform designed to simplify event management by tra
 
 ## 🚀 Live Access
 
-- **Frontend App**: [https://event-sync-theta.vercel.app](https://event-sync-theta.vercel.app)
+- **Frontend App**: [https://event-sync-gamma.vercel.app/](https://event-sync-theta.vercel.app)
 - **Backend API**: [https://eventsync-production-6b02.up.railway.app](https://eventsync-production-6b02.up.railway.app)
 
 ---
