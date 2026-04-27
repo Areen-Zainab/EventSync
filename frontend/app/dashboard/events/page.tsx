@@ -70,8 +70,8 @@ export default function EventsPage() {
   };
 
   return (
-    <div style={{ padding: '32px 36px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+    <div className="mobile-page-padding" style={{ padding: '32px 36px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, gap: 10, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>My Events</h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-2)' }}>{totalEvents} events</p>
@@ -83,13 +83,13 @@ export default function EventsPage() {
       {error && <p style={{ fontSize: '0.85rem', color: 'var(--overdue)', marginBottom: 16 }}>{error}</p>}
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24, overflowX: 'auto', paddingBottom: 4 }}>
         {['All', 'On Track', 'At Risk', 'Overdue', 'Academic', 'Cultural', 'Social', 'Sports'].map(f => (
           <button key={f} style={{ padding: '6px 14px', borderRadius: 99, border: '1px solid var(--border)', background: f === 'All' ? 'var(--accent)' : 'transparent', color: f === 'All' ? '#fff' : 'var(--text-2)', fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' }}>{f}</button>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 18 }}>
         {events.map(ev => (
           <Link key={ev.id} href={`/dashboard/event/${ev.id}`} style={{ textDecoration: 'none' }}>
             <div className="card card-hover" style={{ padding: 20, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}>
@@ -125,7 +125,6 @@ export default function EventsPage() {
           <div className="card card-hover" style={{ padding: 20, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 160, border: '1px dashed var(--border)' }}>
             <span style={{ fontSize: 28, marginBottom: 10 }}>+</span>
             <p style={{ fontWeight: 600, color: 'var(--text-2)', fontSize: '0.875rem' }}>Create New Event</p>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginTop: 4 }}>Free tier: 2 events</p>
           </div>
         </Link>
       </div>

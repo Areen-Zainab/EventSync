@@ -180,12 +180,12 @@ export default function DashboardPage() {
   };
 
   if (loading) {
-    return <div style={{ padding: "32px 36px", color: "var(--text-3)" }}>Loading dashboard...</div>;
+    return <div className="mobile-page-padding" style={{ padding: "32px 36px", color: "var(--text-3)" }}>Loading dashboard...</div>;
   }
 
   if (error || !data) {
     return (
-      <div style={{ padding: "32px 36px" }}>
+      <div className="mobile-page-padding" style={{ padding: "32px 36px" }}>
         <p style={{ color: "var(--overdue)", marginBottom: 12 }}>{error || "Failed to load dashboard."}</p>
         <Link href="/dashboard/events" style={{ color: "var(--accent)", textDecoration: "none", fontSize: "0.85rem" }}>
           Go to My Events
@@ -200,7 +200,7 @@ export default function DashboardPage() {
   const eventCreationBlocked = eventLimit !== null && eventsLeft !== null && eventsLeft <= 0;
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 1200 }}>
+    <div className="mobile-page-padding" style={{ padding: '32px 36px', maxWidth: 1200 }}>
       {/* Header */}
       <div className="fade-up fade-up-1" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
         <div>
@@ -239,7 +239,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats row */}
-      <div className="fade-up fade-up-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+      <div className="fade-up fade-up-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>
         {[
           { label: "Active Events", value: data.stats.active_events, icon: "📅", color: "var(--accent)" },
           { label: "Tasks Today", value: data.stats.tasks_today, icon: "✅", color: "var(--on-track)" },
@@ -254,7 +254,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }}>
         {/* Left column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {/* Active Events */}

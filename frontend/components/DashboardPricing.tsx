@@ -104,7 +104,7 @@ export default function DashboardPricing() {
   };
 
   return (
-    <div style={{ padding: "32px 36px 56px", maxWidth: 1240 }}>
+    <div className="mobile-page-padding" style={{ padding: "32px 36px 56px", maxWidth: 1240 }}>
       <div className="fade-up fade-up-1" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 28, flexWrap: "wrap" }}>
         <div>
           <h1 style={{ fontFamily: "Syne, sans-serif", fontSize: "1.75rem", fontWeight: 800, color: "var(--text-1)", marginBottom: 6 }}>
@@ -115,7 +115,7 @@ export default function DashboardPricing() {
           </p>
         </div>
 
-        <div style={{ padding: "12px 14px", borderRadius: 14, border: "1px solid var(--border)", background: "var(--surface)", minWidth: 220 }}>
+        <div style={{ padding: "12px 14px", borderRadius: 14, border: "1px solid var(--border)", background: "var(--surface)", minWidth: 220, width: "100%", maxWidth: 280 }}>
           <p style={{ fontSize: "0.72rem", color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
             Current Plan
           </p>

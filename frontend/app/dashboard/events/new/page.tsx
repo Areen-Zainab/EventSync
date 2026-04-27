@@ -23,6 +23,7 @@ type DashboardPlanResponse = {
 
 export default function NewEventPage() {
   const router = useRouter();
+  const [isMobile, setIsMobile] = useState(false);
   const [step, setStep] = useState(1);
   const [type, setType] = useState("Academic");
   const [members, setMembers] = useState([{ email: "", role: "Member" }]);
@@ -64,6 +65,13 @@ export default function NewEventPage() {
     };
 
     void loadPlan();
+  }, []);
+
+  useEffect(() => {
+    const syncViewport = () => setIsMobile(window.innerWidth <= 768);
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
   }, []);
 
   const addMember = () => setMembers(m => [...m, { email: "", role: "Member" }]);
@@ -146,7 +154,7 @@ export default function NewEventPage() {
   };
 
   return (
-    <div style={{ padding: '32px 36px', maxWidth: 680 }}>
+    <div className="mobile-page-padding" style={{ padding: '32px 36px', maxWidth: 680 }}>
       {/* Back */}
       <Link href="/dashboard/events" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: 'var(--text-2)', textDecoration: 'none', marginBottom: 24 }}>← Back to Events</Link>
 
@@ -166,7 +174,7 @@ export default function NewEventPage() {
       {error && <p style={{ marginBottom: 16, color: 'var(--overdue)', fontSize: '0.825rem', fontWeight: 600 }}>{error}</p>}
 
       {/* Step indicator */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 32 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 32, overflowX: 'auto', paddingBottom: 4 }}>
         {[1, 2, 3].map(s => (
           <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 28, height: 28, borderRadius: '50%', background: s <= step ? 'var(--accent)' : 'var(--surface-3)', color: s <= step ? '#fff' : 'var(--text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, flexShrink: 0 }}>{s}</div>
@@ -178,14 +186,14 @@ export default function NewEventPage() {
         ))}
       </div>
 
-      <div className="card" style={{ padding: 28 }}>
+      <div className="card mobile-card-padding" style={{ padding: 28 }}>
         {step === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Event Name *</label>
               <input className="input" placeholder="e.g. Annual Tech Symposium 2026" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>Date *</label>
                 <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -220,7 +228,7 @@ export default function NewEventPage() {
               </p>
             </div>
             {members.map((m, i) => (
-              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'center' }}>
                 <input className="input" placeholder="teammate@university.edu" value={m.email} onChange={e => { const arr = [...members]; arr[i].email = e.target.value; setMembers(arr); }} />
                 <select value={m.role} onChange={e => { const arr = [...members]; arr[i].role = e.target.value; setMembers(arr); }} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-1)', borderRadius: 10, padding: '10px 12px', fontSize: '0.875rem', cursor: 'pointer' }}>
                   {roles.map(r => <option key={r}>{r}</option>)}

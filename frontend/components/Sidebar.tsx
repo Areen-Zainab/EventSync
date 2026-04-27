@@ -12,6 +12,7 @@ export default function Sidebar() {
   const searchParams = useSearchParams();
   const [account, setAccount] = useState({ name: "Your account", role: "Organizer", initials: "A" });
   const [plan, setPlan] = useState("Free");
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const eventMatch = path.match(/^\/dashboard\/event\/([^/]+)/);
   const activeEventId = eventMatch?.[1] || null;
@@ -97,7 +98,60 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside style={{ width: 220, minHeight: '100vh', background: 'var(--surface)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', padding: '20px 12px', flexShrink: 0 }}>
+    <>
+      <header className="mobile-only" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 56, zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', background: 'rgba(10,10,15,0.95)', borderBottom: '1px solid var(--border)' }}>
+        <Link href="/dashboard" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ background: 'var(--accent)', borderRadius: 8, width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>⚡</span>
+          <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, color: 'var(--text-1)', fontSize: '0.95rem' }}>EventSync</span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => setMobileOpen((prev) => !prev)}
+          className="btn-ghost"
+          style={{ width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, fontSize: 16 }}
+        >
+          ☰
+        </button>
+      </header>
+
+      {mobileOpen && (
+        <div className="mobile-only" style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(0,0,0,0.5)' }} onClick={() => setMobileOpen(false)}>
+          <aside
+            style={{ width: 250, height: '100%', background: 'var(--surface)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', padding: '16px 12px' }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, color: 'var(--text-1)' }}>Menu</span>
+              <button type="button" onClick={() => setMobileOpen(false)} style={{ border: 'none', background: 'transparent', color: 'var(--text-2)', fontSize: 18, cursor: 'pointer' }}>×</button>
+            </div>
+
+            <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}>
+              {navItems.map(item => (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={`sidebar-link${isItemActive(item.href) ? ' active' : ''}`}
+                >
+                  <span style={{ fontSize: 15 }}>{item.icon}</span>
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
+              {bottomItems.map(item => (
+                <Link key={item.label} href={item.href} onClick={() => setMobileOpen(false)} className="sidebar-link">
+                  <span style={{ fontSize: 15 }}>{item.icon}</span>
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </aside>
+        </div>
+      )}
+
+      <aside className="desktop-only" style={{ width: 220, minHeight: '100vh', background: 'var(--surface)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', padding: '20px 12px', flexShrink: 0 }}>
       <Link href="/dashboard" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 28 }}>
         <span style={{ background: 'var(--accent)', borderRadius: 8, width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 }}>⚡</span>
         <span style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, color: 'var(--text-1)', fontSize: '1rem' }}>EventSync</span>
@@ -137,5 +191,6 @@ export default function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }

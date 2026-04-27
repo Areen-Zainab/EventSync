@@ -85,3 +85,30 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Syne', sans-serif; }
 .fade-up-5 { animation-delay: 0.25s; opacity: 0; }
 
 .hero-glow { background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(124,92,252,0.18) 0%, transparent 70%); }
+
+@media (max-width: 1024px) {
+  .desktop-only {
+    display: none !important;
+  }
+
+  .dashboard-main {
+    padding-top: 64px;
+    padding-bottom: 70px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .mobile-only {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .mobile-page-padding {
+    padding: 18px 14px !important;
+  }
+
+  .mobile-card-padding {
+    padding: 16px !important;
+  }
+}

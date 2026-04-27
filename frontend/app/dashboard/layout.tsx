@@ -11,7 +11,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Suspense fallback={null}>
         <Sidebar />
       </Suspense>
-      <main style={{ flex: 1, overflow: 'auto' }}>
+      <main className="dashboard-main" style={{ flex: 1, overflow: 'auto' }}>
         {children}
       </main>
     </div>

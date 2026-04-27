@@ -201,6 +201,7 @@ export default function EventOverviewPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const eventId = params?.id;
+  const [isMobile, setIsMobile] = useState(false);
 
   const [tab, setTab] = useState<(typeof tabs)[number]>("Overview");
   const [chatMsg, setChatMsg] = useState("");
@@ -266,6 +267,13 @@ export default function EventOverviewPage() {
       done: eventData.tasks.done.filter(includeMine),
     };
   }, [eventData, personalViewOnly, currentUserId]);
+
+  useEffect(() => {
+    const syncViewport = () => setIsMobile(window.innerWidth <= 900);
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
+  }, []);
 
   useEffect(() => {
     const syncFromQuery = () => {
@@ -680,7 +688,7 @@ export default function EventOverviewPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
-      <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "18px 32px", flexShrink: 0 }}>
+      <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: isMobile ? "14px 14px" : "18px 32px", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
           <Link href="/dashboard/events" style={{ fontSize: "0.8rem", color: "var(--text-3)", textDecoration: "none" }}>
             Events
@@ -733,7 +741,7 @@ export default function EventOverviewPage() {
         </div>
       </div>
 
-      <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "0 32px", display: "flex", gap: 0, flexShrink: 0 }}>
+      <div style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: isMobile ? "0 8px" : "0 32px", display: "flex", gap: 0, flexShrink: 0, overflowX: "auto" }}>
         {tabs.map((t) => (
           <button
             key={t}
@@ -757,7 +765,7 @@ export default function EventOverviewPage() {
 
       <div style={{ flex: 1, overflow: "auto" }}>
         {tab === "Overview" && (
-          <div style={{ padding: "28px 32px", display: "grid", gridTemplateColumns: "1fr 320px", gap: 24, maxWidth: 1100 }}>
+          <div style={{ padding: isMobile ? "16px 14px" : "28px 32px", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 320px", gap: 24, maxWidth: 1100 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {eventData.summary.task_overdue > 0 && (
                 <div
@@ -778,7 +786,7 @@ export default function EventOverviewPage() {
                 </div>
               )}
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16 }}>
                 {[
                   { label: "Tasks Done", value: `${eventData.summary.task_done}/${eventData.summary.task_total}`, sub: `${completionRate}% complete` },
                   { label: "Team Size", value: String(eventData.summary.member_count), sub: `${eventData.type || "General"} event` },
@@ -889,7 +897,7 @@ export default function EventOverviewPage() {
 
         {tab === "Chat" && (
           <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ padding: "12px 24px 0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ padding: isMobile ? "10px 14px 0" : "12px 24px 0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-3)" }}>
                 Convert checklist/chat TODO lines into tasks.
               </p>
@@ -903,12 +911,12 @@ export default function EventOverviewPage() {
               </button>
             </div>
             {extractFeedback && (
-              <div style={{ margin: "8px 24px 0", fontSize: "0.78rem", color: "var(--accent)" }}>{extractFeedback}</div>
+              <div style={{ margin: isMobile ? "8px 14px 0" : "8px 24px 0", fontSize: "0.78rem", color: "var(--accent)" }}>{extractFeedback}</div>
             )}
             {mentionNotice && (
-              <div style={{ margin: "12px 24px 0", fontSize: "0.8rem", color: "var(--accent)" }}>{mentionNotice}</div>
+              <div style={{ margin: isMobile ? "12px 14px 0" : "12px 24px 0", fontSize: "0.8rem", color: "var(--accent)" }}>{mentionNotice}</div>
             )}
-            <div style={{ flex: 1, overflow: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ flex: 1, overflow: "auto", padding: isMobile ? "16px 14px" : "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
               {eventData.messages.length === 0 && (
                 <p style={{ color: "var(--text-3)", fontSize: "0.85rem" }}>No messages yet for this event.</p>
               )}
@@ -950,12 +958,13 @@ export default function EventOverviewPage() {
 
             <div
               style={{
-                padding: "16px 24px",
+                padding: isMobile ? "12px 14px" : "16px 24px",
                 borderTop: "1px solid var(--border)",
                 background: "var(--surface)",
                 display: "flex",
                 gap: 10,
                 alignItems: "center",
+                flexWrap: isMobile ? "wrap" : "nowrap",
               }}
             >
               <input
@@ -974,7 +983,7 @@ export default function EventOverviewPage() {
               <input
                 type="file"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                style={{ maxWidth: 220, fontSize: "0.75rem" }}
+                style={{ maxWidth: isMobile ? "100%" : 220, fontSize: "0.75rem", width: isMobile ? "100%" : undefined }}
               />
               <button className="btn-primary px-4 py-2 text-sm" style={{ flexShrink: 0 }} disabled={sending || (!chatMsg.trim() && !selectedFile)} onClick={() => void sendMessage()}>
                 {sending ? "Sending..." : "Send"}
@@ -993,7 +1002,7 @@ export default function EventOverviewPage() {
         )}
 
         {tab === "Tasks" && (
-          <div style={{ padding: "24px 32px" }}>
+          <div style={{ padding: isMobile ? "16px 14px" : "24px 32px" }}>
             {taskError && <p style={{ color: "var(--overdue)", marginBottom: 12, fontSize: "0.8rem" }}>{taskError}</p>}
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
               <button
@@ -1010,8 +1019,8 @@ export default function EventOverviewPage() {
                 👤 {personalViewOnly ? "Personal view: ON" : "Personal view"}
               </button>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: taskDraft ? "1fr 320px" : "1fr", gap: 20 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: taskDraft && !isMobile ? "1fr 320px" : "1fr", gap: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 16 }}>
               {[
                 { col: "To Do", key: "todo" as const, color: "var(--text-3)" },
                 { col: "In Progress", key: "inProgress" as const, color: "var(--at-risk)" },
@@ -1105,7 +1114,7 @@ export default function EventOverviewPage() {
               </div>
 
               {taskDraft && (
-                <div className="card" style={{ padding: 20, height: "fit-content", position: "sticky", top: 0 }}>
+                <div className="card" style={{ padding: 20, height: "fit-content", position: isMobile ? "static" : "sticky", top: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
                     <h3 style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: "0.95rem", color: "var(--text-1)" }}>
                       Task Detail
@@ -1212,7 +1221,7 @@ export default function EventOverviewPage() {
         )}
 
         {tab === "Members" && (
-          <div style={{ padding: "28px 32px", maxWidth: 700 }}>
+          <div style={{ padding: isMobile ? "16px 14px" : "28px 32px", maxWidth: 700 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <h2 style={{ fontFamily: "Syne, sans-serif", fontWeight: 700, fontSize: "1rem", color: "var(--text-1)" }}>
                 Team Members ({eventData.members.length})
