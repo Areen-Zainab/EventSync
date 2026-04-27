@@ -6,6 +6,7 @@ const authRoutes = require('./authRoutes');
 const eventRoutes = require('./eventRoutes');
 const taskRoutes = require('./taskRoutes');
 const notificationRoutes = require('./notificationRoutes');
+const feedbackRoutes = require('./feedbackRoutes');
 
 // Health check
 router.get('/health', (req, res) => {
@@ -17,5 +18,6 @@ router.use('/dashboard', dashboardRoutes);
 router.use('/events', eventRoutes);
 router.use('/tasks', taskRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/feedback', feedbackRoutes);
 
 module.exports = router;

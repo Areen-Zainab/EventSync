@@ -19,11 +19,7 @@ const fromBackendPlan = (plan: string | undefined): PlanName => {
   return "Free";
 };
 
-type PricingSectionProps = {
-  mode?: "section" | "page";
-};
-
-export default function PricingSection({ mode = "section" }: PricingSectionProps) {
+export default function DashboardPricing() {
   const [currentPlan, setCurrentPlan] = useState<PlanName>("Free");
   const [pendingPlan, setPendingPlan] = useState<PlanName | null>(null);
   const [cardModalOpen, setCardModalOpen] = useState(false);
@@ -50,7 +46,7 @@ export default function PricingSection({ mode = "section" }: PricingSectionProps
         setCurrentPlan(planName);
         localStorage.setItem("eventsync_plan", planName);
       } catch {
-        // Ignore best-effort plan sync errors.
+        // Ignore best-effort plan sync errors here.
       }
     };
 
@@ -60,7 +56,7 @@ export default function PricingSection({ mode = "section" }: PricingSectionProps
   const choosePlan = async (plan: PlanName) => {
     const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
     if (!token) {
-      setError("Please log in to update your plan.");
+      setError("Please log in again to update your plan.");
       return;
     }
 
@@ -107,60 +103,78 @@ export default function PricingSection({ mode = "section" }: PricingSectionProps
     closeCardModal();
   };
 
-  const sectionStyle =
-    mode === 'page'
-      ? { padding: '64px 24px 88px', background: 'var(--bg)', minHeight: 'calc(100vh - 160px)' }
-      : { padding: '96px 24px', background: 'var(--surface)' };
-
   return (
-    <section id="pricing" style={sectionStyle}>
-      <div className="max-w-5xl mx-auto">
-        <div className="text-center mb-16">
-          <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: 'clamp(1.75rem, 4vw, 2.5rem)', fontWeight: 800, color: 'var(--text-1)', marginBottom: 12 }}>
-            Pick the plan that fits your team
-          </h2>
-          <p style={{ color: 'var(--text-2)', fontSize: '1rem' }}>Start with Free and upgrade as your events grow.</p>
+    <div style={{ padding: "32px 36px 56px", maxWidth: 1240 }}>
+      <div className="fade-up fade-up-1" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 28, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ fontFamily: "Syne, sans-serif", fontSize: "1.75rem", fontWeight: 800, color: "var(--text-1)", marginBottom: 6 }}>
+            Pricing Plans
+          </h1>
+          <p style={{ color: "var(--text-2)", fontSize: "0.92rem", maxWidth: 720 }}>
+            Compare plans and update your in-app plan without leaving the dashboard.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {PRICING_PLANS.map(plan => (
-            <div key={plan.name} className="card p-6 flex flex-col" style={plan.highlight ? { border: '1px solid rgba(124,92,252,0.5)', position: 'relative' } : {}}>
+        <div style={{ padding: "12px 14px", borderRadius: 14, border: "1px solid var(--border)", background: "var(--surface)", minWidth: 220 }}>
+          <p style={{ fontSize: "0.72rem", color: "var(--text-3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+            Current Plan
+          </p>
+          <p style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-1)", margin: 0 }}>{currentPlan}</p>
+        </div>
+      </div>
+
+      {error && <p style={{ marginTop: 8, color: "var(--overdue)", fontSize: "0.82rem" }}>{error}</p>}
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {PRICING_PLANS.map((plan) => {
+          const isActive = currentPlan === plan.name;
+
+          return (
+            <div
+              key={plan.name}
+              className="card fade-up fade-up-2"
+              style={{
+                padding: 24,
+                position: "relative",
+                border: plan.highlight ? "1px solid rgba(124,92,252,0.5)" : undefined,
+                boxShadow: isActive ? "0 0 0 1px rgba(0,212,170,0.18) inset" : undefined,
+              }}
+            >
               {plan.highlight && (
-                <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', background: 'var(--accent)', color: '#fff', fontSize: '0.7rem', fontWeight: 700, padding: '3px 12px', borderRadius: 99, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: "var(--accent)", color: "#fff", fontSize: "0.7rem", fontWeight: 700, padding: "3px 12px", borderRadius: 999, letterSpacing: "0.06em", textTransform: "uppercase" }}>
                   Most Popular
                 </div>
               )}
-              <div style={{ marginBottom: 20 }}>
-                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{plan.name}</p>
+
+              <div style={{ marginBottom: 18 }}>
+                <p style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{plan.name}</p>
                 <div className="flex items-baseline gap-1">
-                  <span style={{ fontFamily: 'Syne, sans-serif', fontSize: '2rem', fontWeight: 800, color: 'var(--text-1)' }}>{plan.price}</span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>/ {plan.period}</span>
+                  <span style={{ fontFamily: "Syne, sans-serif", fontSize: "2rem", fontWeight: 800, color: "var(--text-1)" }}>{plan.price}</span>
+                  <span style={{ fontSize: "0.8rem", color: "var(--text-3)" }}>/ {plan.period}</span>
                 </div>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginTop: 6 }}>Best for: {plan.bestFor}</p>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-2)", marginTop: 6 }}>Best for: {plan.bestFor}</p>
               </div>
 
-              <ul className="flex flex-col gap-2 mb-8 flex-1">
-                {plan.features.map(f => (
-                  <li key={f} style={{ fontSize: '0.875rem', color: 'var(--text-2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ color: 'var(--accent-3)', fontSize: '0.7rem' }}>✓</span>
-                    {f}
+              <ul className="flex flex-col gap-2 mb-8">
+                {plan.features.map((feature) => (
+                  <li key={feature} style={{ fontSize: "0.875rem", color: "var(--text-2)", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: "var(--accent-3)", fontSize: "0.7rem" }}>✓</span>
+                    {feature}
                   </li>
                 ))}
               </ul>
 
               <button
                 type="button"
-                className={currentPlan === plan.name ? 'btn-primary py-2.5 text-sm' : (plan.highlight ? 'btn-primary py-2.5 text-sm' : 'btn-ghost py-2.5 text-sm')}
-                style={{ width: '100%' }}
+                className={isActive ? "btn-primary py-2.5 text-sm" : "btn-ghost py-2.5 text-sm"}
+                style={{ width: "100%" }}
                 onClick={() => void handlePlanAction(plan.name)}
               >
-                {currentPlan === plan.name ? 'Current Plan' : `Choose ${plan.name}`}
+                {isActive ? "Current Plan" : `Switch to ${plan.name}`}
               </button>
             </div>
-          ))}
-        </div>
-
-        {error && <p style={{ marginTop: 14, color: 'var(--overdue)', fontSize: '0.82rem' }}>{error}</p>}
+          );
+        })}
       </div>
 
       <CardDetailsModal
@@ -169,6 +183,6 @@ export default function PricingSection({ mode = "section" }: PricingSectionProps
         onClose={closeCardModal}
         onConfirm={confirmCardDetails}
       />
-    </section>
+    </div>
   );
 }

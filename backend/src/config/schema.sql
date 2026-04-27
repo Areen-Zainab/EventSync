@@ -8,9 +8,19 @@ CREATE TABLE IF NOT EXISTS users (
   email           VARCHAR(150) UNIQUE NOT NULL,
   password_hash   TEXT NOT NULL,
   role            VARCHAR(20) NOT NULL CHECK (role IN ('Organizer', 'Member')),
+  plan            VARCHAR(20) NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'plus', 'premium')),
   privacy_consent BOOLEAN NOT NULL DEFAULT FALSE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS plan VARCHAR(20) NOT NULL DEFAULT 'free';
+
+ALTER TABLE users
+  DROP CONSTRAINT IF EXISTS users_plan_check;
+
+ALTER TABLE users
+  ADD CONSTRAINT users_plan_check CHECK (plan IN ('free', 'plus', 'premium'));
 
 -- User settings
 CREATE TABLE IF NOT EXISTS user_settings (
@@ -142,3 +152,16 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_read
 
 CREATE INDEX IF NOT EXISTS idx_notification_logs_notification
   ON notification_logs (notification_id);
+
+-- User feedback
+CREATE TABLE IF NOT EXISTS feedback (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feedback   VARCHAR(20) NOT NULL CHECK (feedback IN ('liked', 'disliked', 'okay')),
+  comment    TEXT,
+  shown_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_user_created
+  ON feedback (user_id, created_at DESC);

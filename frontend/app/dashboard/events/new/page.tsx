@@ -1,11 +1,25 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 const eventTypes = ["Academic", "Social", "Sports", "Cultural"];
 const roles = ["Organizer", "Coordinator", "Member"];
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
+
+type PlanSnapshot = {
+  name: "free" | "plus" | "premium";
+  event_limit: number | null;
+  member_limit: number | null;
+  events_left: number | null;
+};
+
+type DashboardPlanResponse = {
+  success: boolean;
+  dashboard?: {
+    plan?: PlanSnapshot;
+  };
+};
 
 export default function NewEventPage() {
   const router = useRouter();
@@ -18,6 +32,39 @@ export default function NewEventPage() {
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [planInfo, setPlanInfo] = useState<PlanSnapshot | null>(null);
+
+  const eventCreationBlocked =
+    planInfo !== null &&
+    planInfo.event_limit !== null &&
+    planInfo.events_left !== null &&
+    planInfo.events_left <= 0;
+
+  const formatPlanLabel = (plan?: string) => {
+    if (plan === "plus") return "Plus";
+    if (plan === "premium") return "Premium";
+    return "Free";
+  };
+
+  useEffect(() => {
+    const loadPlan = async () => {
+      const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+      if (!token) return;
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/dashboard`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const result: DashboardPlanResponse = await response.json();
+        if (!response.ok || !result.success || !result.dashboard?.plan) return;
+        setPlanInfo(result.dashboard.plan);
+      } catch {
+        // Ignore non-blocking plan snapshot fetch errors.
+      }
+    };
+
+    void loadPlan();
+  }, []);
 
   const addMember = () => setMembers(m => [...m, { email: "", role: "Member" }]);
 
@@ -41,6 +88,11 @@ export default function NewEventPage() {
     if (!name.trim() || !date) {
       setError("Please complete event details before creating.");
       setStep(1);
+      return;
+    }
+
+    if (eventCreationBlocked) {
+      setError("Your current plan reached its event limit. Upgrade to create more events.");
       return;
     }
 
@@ -100,6 +152,17 @@ export default function NewEventPage() {
 
       <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 6 }}>Create New Event</h1>
       <p style={{ fontSize: '0.875rem', color: 'var(--text-2)', marginBottom: 32 }}>Fill in the details to kick off your event workspace.</p>
+      {planInfo && (
+        <div style={{ marginBottom: 16, background: 'var(--surface-2)', borderRadius: 10, padding: 12, border: '1px solid var(--border)' }}>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-2)' }}>
+            Plan: <span style={{ color: 'var(--text-1)', fontWeight: 600 }}>{formatPlanLabel(planInfo.name)}</span>
+            {planInfo.event_limit !== null && planInfo.events_left !== null ? ` - ${planInfo.events_left} event slot(s) left` : ' - Unlimited events'}
+          </p>
+          <p style={{ margin: '6px 0 0', fontSize: '0.75rem', color: 'var(--text-3)' }}>
+            Member limit per event: {planInfo.member_limit === null ? 'Unlimited' : planInfo.member_limit}
+          </p>
+        </div>
+      )}
       {error && <p style={{ marginBottom: 16, color: 'var(--overdue)', fontSize: '0.825rem', fontWeight: 600 }}>{error}</p>}
 
       {/* Step indicator */}
@@ -151,7 +214,10 @@ export default function NewEventPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div>
               <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>Invite Team Members</p>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>Add by email or share the invite link after creating.</p>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
+                Add by email or share the invite link after creating.
+                {planInfo?.member_limit !== null ? ` This plan allows up to ${planInfo?.member_limit} members per event.` : ' This plan allows unlimited members per event.'}
+              </p>
             </div>
             {members.map((m, i) => (
               <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
@@ -199,7 +265,7 @@ export default function NewEventPage() {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 28 }}>
           <button onClick={() => setStep(s => Math.max(1, s - 1))} className="btn-ghost py-2.5 px-5 text-sm" style={{ visibility: step > 1 ? 'visible' : 'hidden' }}>← Back</button>
-          <button onClick={step === 3 ? createEvent : goToNextStep} className="btn-primary py-2.5 px-6 text-sm" disabled={isSubmitting} style={{ opacity: isSubmitting ? 0.7 : 1, cursor: isSubmitting ? 'not-allowed' : 'pointer' }}>
+          <button onClick={step === 3 ? createEvent : goToNextStep} className="btn-primary py-2.5 px-6 text-sm" disabled={isSubmitting || eventCreationBlocked} style={{ opacity: isSubmitting || eventCreationBlocked ? 0.7 : 1, cursor: isSubmitting || eventCreationBlocked ? 'not-allowed' : 'pointer' }}>
             {step === 3 ? (isSubmitting ? 'Creating...' : '🚀 Create Event') : 'Continue →'}
           </button>
         </div>

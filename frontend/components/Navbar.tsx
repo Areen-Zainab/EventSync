@@ -12,7 +12,7 @@ export default function Navbar() {
 
       <div className="hidden md:flex items-center gap-8 text-sm font-medium" style={{ color: 'var(--text-2)' }}>
         <Link href="#features" className="hover:text-white transition-colors" style={{ color: 'inherit' }}>Features</Link>
-        <Link href="#pricing" className="hover:text-white transition-colors" style={{ color: 'inherit' }}>Pricing</Link>
+        <Link href="/pricing" className="hover:text-white transition-colors" style={{ color: 'inherit' }}>Pricing</Link>
         <Link href="#about" className="hover:text-white transition-colors" style={{ color: 'inherit' }}>About</Link>
       </div>
 

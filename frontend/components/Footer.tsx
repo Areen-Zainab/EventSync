@@ -1,6 +1,13 @@
 import Link from "next/link";
 
 export default function Footer() {
+  const links = [
+    { label: 'Features', href: '#' },
+    { label: 'Pricing', href: '/pricing' },
+    { label: 'Privacy Policy', href: '#' },
+    { label: 'Terms', href: '#' },
+  ];
+
   return (
     <footer style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)', padding: '40px 24px' }}>
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
@@ -10,8 +17,8 @@ export default function Footer() {
         </div>
 
         <div className="flex gap-6 text-sm" style={{ color: 'var(--text-3)' }}>
-          {['Features', 'Pricing', 'Privacy Policy', 'Terms'].map(l => (
-            <Link key={l} href="#" style={{ color: 'inherit', textDecoration: 'none' }} className="hover:text-white transition-colors">{l}</Link>
+          {links.map(link => (
+            <Link key={link.label} href={link.href} style={{ color: 'inherit', textDecoration: 'none' }} className="hover:text-white transition-colors">{link.label}</Link>
           ))}
         </div>
 

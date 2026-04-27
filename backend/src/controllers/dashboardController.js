@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const { getPlanLimits, normalizePlan } = require('../utils/planLimits');
 const {
   sanitizeEventRow,
   sanitizeTaskRow,
@@ -53,8 +54,9 @@ const getDashboardOverview = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    const [userResult, events, todayTasksResult, deadlinesResult, overdueCountResult, teamCountResult, activityResult] = await Promise.all([
-      query('SELECT id, name, email, role FROM users WHERE id = $1', [userId]),
+    const [userResult, createdEventsResult, events, todayTasksResult, deadlinesResult, overdueCountResult, teamCountResult, activityResult] = await Promise.all([
+        query("SELECT id, name, email, role, COALESCE(plan, 'free') AS plan FROM users WHERE id = $1", [userId]),
+      query('SELECT COUNT(*)::int AS total FROM events WHERE created_by = $1', [userId]),
       loadAccessibleEvents(userId),
       query(
         `SELECT t.*,
@@ -217,6 +219,10 @@ const getDashboardOverview = async (req, res, next) => {
     });
 
     const user = userResult.rows[0] || null;
+    const normalizedPlan = normalizePlan(user?.plan || 'free');
+    const planLimits = getPlanLimits(normalizedPlan);
+    const eventsCreated = createdEventsResult.rows[0]?.total || 0;
+    const eventsLeft = planLimits.eventLimit === null ? null : Math.max(0, planLimits.eventLimit - eventsCreated);
     const stats = {
       active_events: activeEvents,
       overdue_events: overdueEvents,
@@ -229,6 +235,13 @@ const getDashboardOverview = async (req, res, next) => {
       success: true,
       dashboard: {
         user,
+        plan: {
+          name: normalizedPlan,
+          event_limit: planLimits.eventLimit,
+          member_limit: planLimits.memberLimit,
+          events_created: eventsCreated,
+          events_left: eventsLeft,
+        },
         stats,
         events,
         today_tasks: todayTasks,

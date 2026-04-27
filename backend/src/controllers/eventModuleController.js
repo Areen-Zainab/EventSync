@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const { getIo } = require('../realtime/io');
+const { getPlanLimits, normalizePlan } = require('../utils/planLimits');
 const {
   VALID_MEMBER_ROLES,
   withTransaction,
@@ -17,6 +18,17 @@ const VALID_PRIORITIES = new Set(['low', 'medium', 'high']);
 const isUuid = (value) =>
   typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const roomName = (eventId) => `event:${eventId}`;
+
+const getUserPlanRecord = async (db, userId) => {
+  const result = await db(`SELECT COALESCE(plan, 'free') AS plan FROM users WHERE id = $1`, [userId]);
+  return normalizePlan(result.rows[0]?.plan || 'free');
+};
+
+const buildEventLimitMessage = (plan, limit) =>
+  `Your ${plan} plan allows up to ${limit} active event${limit === 1 ? '' : 's'}. Upgrade to create more.`;
+
+const buildMemberLimitMessage = (plan, limit) =>
+  `Your ${plan} plan allows up to ${limit} members in this event. Upgrade to add more members.`;
 
 const hasEventAccess = async (db, userId, eventId) => {
   const result = await db(
@@ -410,6 +422,26 @@ const createEvent = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Event name is required.' });
     }
 
+    const userPlan = await getUserPlanRecord(query, createdBy);
+    const planLimits = getPlanLimits(userPlan);
+
+    if (planLimits.eventLimit !== null) {
+      const createdCountResult = await query(
+        `SELECT COUNT(*)::int AS total
+         FROM events
+         WHERE created_by = $1`,
+        [createdBy]
+      );
+      const createdCount = createdCountResult.rows[0]?.total || 0;
+      if (createdCount >= planLimits.eventLimit) {
+        return res.status(403).json({
+          success: false,
+          message: buildEventLimitMessage(userPlan, planLimits.eventLimit),
+          code: 'PLAN_EVENT_LIMIT_REACHED',
+        });
+      }
+    }
+
     const result = await withTransaction(async (client) => {
       const eventResult = await client.query(
         `INSERT INTO events (name, description, date, venue, type, created_by)
@@ -428,6 +460,8 @@ const createEvent = async (req, res, next) => {
 
       const invitedMembers = [];
       const skippedMembers = [];
+      const processedMemberIds = new Set([createdBy]);
+      let currentMemberCount = 1;
 
       if (Array.isArray(members)) {
         for (const member of members) {
@@ -450,12 +484,26 @@ const createEvent = async (req, res, next) => {
             continue;
           }
 
+          if (processedMemberIds.has(invitedUserId)) {
+            continue;
+          }
+
+          if (planLimits.memberLimit !== null && currentMemberCount >= planLimits.memberLimit) {
+            const limitError = new Error(buildMemberLimitMessage(userPlan, planLimits.memberLimit));
+            limitError.statusCode = 403;
+            limitError.code = 'PLAN_MEMBER_LIMIT_REACHED';
+            throw limitError;
+          }
+
           await client.query(
             `INSERT INTO event_members (event_id, user_id, role)
              VALUES ($1, $2, $3)
              ON CONFLICT (event_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
             [event.id, invitedUserId, role]
           );
+
+          processedMemberIds.add(invitedUserId);
+          currentMemberCount += 1;
 
           invitedMembers.push({ user_id: invitedUserId, email: invitedEmail || member.email || null, role });
         }
@@ -473,6 +521,9 @@ const createEvent = async (req, res, next) => {
       skipped_members: result.skippedMembers,
     });
   } catch (err) {
+    if (err?.code === 'PLAN_MEMBER_LIMIT_REACHED') {
+      return res.status(403).json({ success: false, message: err.message, code: err.code });
+    }
     next(err);
   }
 };
@@ -650,6 +701,37 @@ const inviteMember = async (req, res, next) => {
 
     if (!invitedUserId) {
       return res.status(404).json({ success: false, message: 'No matching user was found to invite.' });
+    }
+
+    const eventPlanResult = await query(
+      `SELECT e.created_by,
+              COALESCE(owner.plan, 'free') AS owner_plan,
+              (SELECT COUNT(*)::int FROM event_members em WHERE em.event_id = e.id) AS member_count,
+              EXISTS(
+                SELECT 1
+                FROM event_members em2
+                WHERE em2.event_id = e.id AND em2.user_id = $2
+              ) AS already_member
+       FROM events e
+       JOIN users owner ON owner.id = e.created_by
+       WHERE e.id = $1`,
+      [eventId, invitedUserId]
+    );
+
+    if (eventPlanResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Event not found.' });
+    }
+
+    const eventPlanRow = eventPlanResult.rows[0];
+    const ownerPlan = normalizePlan(eventPlanRow.owner_plan);
+    const ownerPlanLimits = getPlanLimits(ownerPlan);
+
+    if (!eventPlanRow.already_member && ownerPlanLimits.memberLimit !== null && eventPlanRow.member_count >= ownerPlanLimits.memberLimit) {
+      return res.status(403).json({
+        success: false,
+        message: buildMemberLimitMessage(ownerPlan, ownerPlanLimits.memberLimit),
+        code: 'PLAN_MEMBER_LIMIT_REACHED',
+      });
     }
 
     const memberResult = await query(

@@ -14,7 +14,14 @@ type AuthApiResponse = {
     name: string;
     email: string;
     role: "Organizer" | "Member";
+    plan?: "free" | "plus" | "premium";
   };
+};
+
+const formatPlanName = (plan: string | undefined): "Free" | "Plus" | "Premium" => {
+  if (plan === "plus") return "Plus";
+  if (plan === "premium") return "Premium";
+  return "Free";
 };
 
 export default function AuthForm({ mode }: AuthFormProps) {
@@ -93,6 +100,17 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
       localStorage.setItem("eventsync_token", result.token);
       localStorage.setItem("eventsync_user", JSON.stringify(result.user));
+      localStorage.setItem("eventsync_plan", formatPlanName(result.user.plan));
+
+      if (isLogin) {
+        const loginAt = Date.now();
+        const minDelayMs = 60 * 1000;
+        const maxDelayMs = 120 * 1000;
+        const randomDelayMs = Math.floor(Math.random() * (maxDelayMs - minDelayMs + 1)) + minDelayMs;
+        localStorage.setItem(`eventsync_feedback_login_at_${result.user.id}`, String(loginAt));
+        localStorage.setItem(`eventsync_feedback_prompt_at_${result.user.id}`, String(loginAt + randomDelayMs));
+      }
+
       setSuccessMessage(isLogin ? "Login successful." : "Signup successful.");
       router.push("/dashboard");
     } catch {

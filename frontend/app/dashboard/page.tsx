@@ -40,7 +40,15 @@ type DashboardPayload = {
     name: string;
     email: string;
     role: string;
+    plan?: "free" | "plus" | "premium";
   } | null;
+  plan?: {
+    name: "free" | "plus" | "premium";
+    event_limit: number | null;
+    member_limit: number | null;
+    events_created: number;
+    events_left: number | null;
+  };
   stats: {
     active_events: number;
     tasks_today: number;
@@ -139,6 +147,13 @@ export default function DashboardPage() {
     });
   }, [data]);
 
+  useEffect(() => {
+    if (!data?.plan?.name) return;
+    const label = data.plan.name === "plus" ? "Plus" : data.plan.name === "premium" ? "Premium" : "Free";
+    localStorage.setItem("eventsync_plan", label);
+    window.dispatchEvent(new Event("eventsync-plan-updated"));
+  }, [data?.plan?.name]);
+
   const formatEventDate = (value: string | null) => {
     if (!value) return "No date";
     const parsed = new Date(value);
@@ -158,6 +173,12 @@ export default function DashboardPage() {
     return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   };
 
+  const formatPlanLabel = (plan: string | undefined) => {
+    if (plan === "plus") return "Plus";
+    if (plan === "premium") return "Premium";
+    return "Free";
+  };
+
   if (loading) {
     return <div style={{ padding: "32px 36px", color: "var(--text-3)" }}>Loading dashboard...</div>;
   }
@@ -173,6 +194,11 @@ export default function DashboardPage() {
     );
   }
 
+  const currentPlan = formatPlanLabel(data.plan?.name || data.user?.plan);
+  const eventsLeft = data.plan?.events_left ?? null;
+  const eventLimit = data.plan?.event_limit ?? null;
+  const eventCreationBlocked = eventLimit !== null && eventsLeft !== null && eventsLeft <= 0;
+
   return (
     <div style={{ padding: '32px 36px', maxWidth: 1200 }}>
       {/* Header */}
@@ -184,10 +210,32 @@ export default function DashboardPage() {
           <p style={{ color: 'var(--text-2)', fontSize: '0.875rem' }}>
             You have {data.stats.tasks_today} task(s) due today and {data.stats.overdue_tasks} overdue task(s).
           </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Current plan</span>
+            <span style={{ padding: '5px 11px', borderRadius: 999, background: 'rgba(124,92,252,0.16)', border: '1px solid rgba(124,92,252,0.28)', color: 'var(--text-1)', fontSize: '0.82rem', fontWeight: 600 }}>
+              {currentPlan}
+            </span>
+            {eventLimit !== null && eventsLeft !== null && (
+              <span style={{ fontSize: '0.78rem', color: eventCreationBlocked ? 'var(--overdue)' : 'var(--text-2)', fontWeight: 600 }}>
+                {eventsLeft} event slot(s) left
+              </span>
+            )}
+          </div>
         </div>
-        <Link href="/dashboard/events/new" className="btn-primary px-4 py-2.5 text-sm" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          + New Event
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Link href="/dashboard/pricing" className="btn-ghost px-4 py-2.5 text-sm" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            Pricing
+          </Link>
+          {eventCreationBlocked ? (
+            <button className="btn-primary px-4 py-2.5 text-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: 0.6, cursor: 'not-allowed' }} disabled title="Plan event limit reached. Upgrade to create more events.">
+              + New Event
+            </button>
+          ) : (
+            <Link href="/dashboard/events/new" className="btn-primary px-4 py-2.5 text-sm" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              + New Event
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Stats row */}

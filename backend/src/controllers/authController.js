@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/db');
+const { normalizePlan, VALID_PLANS } = require('../utils/planLimits');
 
 const SALT_ROUNDS = 10;
 
@@ -45,7 +46,7 @@ const signup = async (req, res, next) => {
     const result = await query(
       `INSERT INTO users (name, email, password_hash, role, privacy_consent)
        VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, email, role, created_at`,
+       RETURNING id, name, email, role, plan, created_at`,
       [name, email, password_hash, role, privacy_consent]
     );
 
@@ -83,7 +84,7 @@ const login = async (req, res, next) => {
     res.json({
       success: true,
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, plan: normalizePlan(user.plan) },
     });
   } catch (err) {
     next(err);
@@ -94,6 +95,7 @@ const getCurrentUser = async (req, res, next) => {
   try {
     const result = await query(
       `SELECT u.id, u.name, u.email, u.role, u.privacy_consent, u.created_at,
+              COALESCE(u.plan, 'free') AS plan,
               COALESCE(s.task_reminders, TRUE) AS task_reminders,
               COALESCE(s.ai_alerts, TRUE) AS ai_alerts,
               COALESCE(s.team_updates, FALSE) AS team_updates,
@@ -116,6 +118,7 @@ const getCurrentUser = async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        plan: normalizePlan(user.plan),
         privacy_consent: user.privacy_consent,
         created_at: user.created_at,
       },
@@ -133,7 +136,13 @@ const getCurrentUser = async (req, res, next) => {
 
 const updateCurrentUser = async (req, res, next) => {
   try {
-    const { name, email, settings } = req.body;
+    const { name, email, plan, settings } = req.body;
+
+    const planCandidate = plan === undefined ? null : String(plan).trim().toLowerCase();
+    if (planCandidate !== null && !VALID_PLANS.has(planCandidate)) {
+      return res.status(400).json({ success: false, message: 'Invalid plan value.' });
+    }
+    const normalizedPlan = planCandidate === null ? null : normalizePlan(planCandidate);
 
     const existing = await query('SELECT id, email FROM users WHERE id = $1', [req.user.id]);
     if (existing.rows.length === 0) {
@@ -150,10 +159,11 @@ const updateCurrentUser = async (req, res, next) => {
     const updateResult = await query(
       `UPDATE users
        SET name = COALESCE(NULLIF($1, ''), name),
-           email = COALESCE(NULLIF($2, ''), email)
-       WHERE id = $3
-       RETURNING id, name, email, role, privacy_consent, created_at`,
-      [name || null, email || null, req.user.id]
+           email = COALESCE(NULLIF($2, ''), email),
+           plan = COALESCE($3, plan)
+       WHERE id = $4
+       RETURNING id, name, email, role, plan, privacy_consent, created_at`,
+      [name || null, email || null, normalizedPlan, req.user.id]
     );
 
     if (updateResult.rows.length === 0) {
@@ -186,7 +196,15 @@ const updateCurrentUser = async (req, res, next) => {
     const user = updateResult.rows[0];
     return res.json({
       success: true,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, privacy_consent: user.privacy_consent, created_at: user.created_at },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        plan: normalizePlan(user.plan),
+        privacy_consent: user.privacy_consent,
+        created_at: user.created_at,
+      },
       settings: savedSettings
         ? {
             taskReminders: savedSettings.task_reminders,

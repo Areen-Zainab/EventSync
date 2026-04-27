@@ -11,6 +11,7 @@ export default function Sidebar() {
   const path = usePathname();
   const searchParams = useSearchParams();
   const [account, setAccount] = useState({ name: "Your account", role: "Organizer", initials: "A" });
+  const [plan, setPlan] = useState("Free");
 
   const eventMatch = path.match(/^\/dashboard\/event\/([^/]+)/);
   const activeEventId = eventMatch?.[1] || null;
@@ -73,11 +74,25 @@ export default function Sidebar() {
 
     const onStorage = () => loadAccount();
     const onAccountUpdate = () => loadAccount();
+    const loadPlan = () => {
+      try {
+        const storedPlan = typeof window !== "undefined" ? localStorage.getItem("eventsync_plan") : null;
+        setPlan(storedPlan || "Free");
+      } catch {
+        setPlan("Free");
+      }
+    };
+
+    loadPlan();
+
+    const onPlanUpdate = () => loadPlan();
     window.addEventListener("storage", onStorage);
     window.addEventListener("eventsync-account-updated", onAccountUpdate as EventListener);
+    window.addEventListener("eventsync-plan-updated", onPlanUpdate as EventListener);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("eventsync-account-updated", onAccountUpdate as EventListener);
+      window.removeEventListener("eventsync-plan-updated", onPlanUpdate as EventListener);
     };
   }, []);
 
@@ -117,6 +132,7 @@ export default function Sidebar() {
           <div>
             <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-1)', margin: 0 }}>{account.name}</p>
             <p style={{ fontSize: '0.7rem', color: 'var(--text-3)', margin: 0 }}>{account.role}</p>
+            <p style={{ fontSize: '0.7rem', color: 'var(--accent)', margin: 0, marginTop: 2, fontWeight: 600 }}>Plan: {plan}</p>
           </div>
         </div>
       </div>
