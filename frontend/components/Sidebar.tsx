@@ -1,13 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 const bottomItems = [
   { label: "Settings", href: "/dashboard/settings", icon: "⚙" },
 ];
 
-export default function Sidebar() {
+function SidebarInner() {
   const path = usePathname();
   const searchParams = useSearchParams();
   const [account, setAccount] = useState({ name: "Your account", role: "Organizer", initials: "A" });
@@ -192,5 +192,13 @@ export default function Sidebar() {
       </div>
     </aside>
     </>
+  );
+}
+
+export default function Sidebar() {
+  return (
+    <Suspense fallback={null}>
+      <SidebarInner />
+    </Suspense>
   );
 }

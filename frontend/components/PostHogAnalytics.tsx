@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import posthog from "posthog-js";
@@ -8,7 +8,7 @@ import posthog from "posthog-js";
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
 
-export default function PostHogAnalytics({ children }: { children: ReactNode }) {
+function PostHogPageView() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isReady, setIsReady] = useState(false);
@@ -44,5 +44,16 @@ export default function PostHogAnalytics({ children }: { children: ReactNode }) 
     });
   }, [isReady, pathname, searchParams]);
 
-  return <>{children}</>;
+  return null;
+}
+
+export default function PostHogAnalytics({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <Suspense fallback={null}>
+        <PostHogPageView />
+      </Suspense>
+      {children}
+    </>
+  );
 }
