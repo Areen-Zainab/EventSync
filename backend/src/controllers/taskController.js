@@ -1,5 +1,6 @@
 const { query } = require('../config/db');
 const { sendNotification } = require('../services/notificationService');
+const posthog = require('../config/posthog');
 
 const VALID_STATUSES = new Set(['pending', 'in_progress', 'done']);
 const VALID_PRIORITIES = new Set(['low', 'medium', 'high']);
@@ -485,6 +486,19 @@ const createTask = async (req, res, next) => {
       });
     }
 
+    posthog.capture({
+      distinctId: String(userId),
+      event: 'task_created',
+      properties: {
+        task_id: createdTask.id,
+        event_id: event_id || null,
+        status: normalizedStatus,
+        priority: normalizedPriority,
+        has_due_date: !!normalizedDueDate,
+        assignee_count: assignedUserIds.length,
+      },
+    });
+
     return res.status(201).json({ success: true, task: sanitizeTask(hydratedTask || createdTask) });
   } catch (err) {
     return next(err);
@@ -700,6 +714,17 @@ const updateTaskStatus = async (req, res, next) => {
         });
       }
     }
+
+    posthog.capture({
+      distinctId: String(req.user.id),
+      event: 'task_status_updated',
+      properties: {
+        task_id: taskId,
+        event_id: existingTask.event_id || null,
+        previous_status: existingTask.status,
+        new_status: status,
+      },
+    });
 
     return res.json({ success: true, task: sanitizeTask(hydratedTask || updatedTask) });
   } catch (err) {

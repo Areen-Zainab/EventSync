@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const posthog = require('../config/posthog');
 
 const VALID_FEEDBACK = new Set(['liked', 'disliked', 'okay']);
 const MAX_COMMENT_LENGTH = 2000;
@@ -45,6 +46,12 @@ const submitFeedback = async (req, res, next) => {
        RETURNING id, user_id, feedback, comment, shown_at, created_at`,
       [userId, rawFeedback, commentInput || null]
     );
+
+    posthog.capture({
+      distinctId: String(userId),
+      event: 'feedback_submitted',
+      properties: { feedback: rawFeedback, has_comment: !!commentInput },
+    });
 
     return res.status(201).json({
       success: true,

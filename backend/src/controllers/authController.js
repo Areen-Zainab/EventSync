@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { query } = require('../config/db');
 const { normalizePlan, VALID_PLANS } = require('../utils/planLimits');
+const posthog = require('../config/posthog');
 
 const SALT_ROUNDS = 10;
 
@@ -53,6 +54,12 @@ const signup = async (req, res, next) => {
     const user = result.rows[0];
     const token = generateToken(user);
 
+    posthog.capture({
+      distinctId: String(user.id),
+      event: 'user_signed_up',
+      properties: { name: user.name, email: user.email, role: user.role },
+    });
+
     res.status(201).json({ success: true, token, user });
   } catch (err) {
     next(err);
@@ -80,6 +87,12 @@ const login = async (req, res, next) => {
     }
 
     const token = generateToken(user);
+
+    posthog.capture({
+      distinctId: String(user.id),
+      event: 'user_logged_in',
+      properties: { email: user.email, role: user.role, plan: normalizePlan(user.plan) },
+    });
 
     res.json({
       success: true,

@@ -1,4 +1,5 @@
 const { query } = require('../config/db');
+const posthog = require('../config/posthog');
 
 // POST /api/events
 const createEvent = async (req, res, next) => {
@@ -24,6 +25,12 @@ const createEvent = async (req, res, next) => {
       `INSERT INTO event_members (event_id, user_id, role) VALUES ($1, $2, 'Organizer')`,
       [event.id, created_by]
     );
+
+    posthog.capture({
+      distinctId: String(created_by),
+      event: 'event_created',
+      properties: { event_id: event.id, name: event.name, type: event.type, venue: event.venue },
+    });
 
     res.status(201).json({ success: true, event });
   } catch (err) {
@@ -67,6 +74,12 @@ const inviteMember = async (req, res, next) => {
        ON CONFLICT (event_id, user_id) DO NOTHING`,
       [event_id, user_id, role]
     );
+
+    posthog.capture({
+      distinctId: String(req.user.id),
+      event: 'event_member_invited',
+      properties: { event_id, invited_user_id: user_id, role },
+    });
 
     res.json({ success: true, message: 'Member invited.' });
   } catch (err) {
