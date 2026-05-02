@@ -2,7 +2,7 @@
 CREATE TABLE IF NOT EXISTS notifications (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type            VARCHAR(50) NOT NULL CHECK (type IN ('task_reminder', 'task_overdue', 'task_assigned', 'task_completed', 'ai_alert', 'team_activity')),
+  type            VARCHAR(50) NOT NULL CHECK (type IN ('task_reminder', 'task_overdue', 'task_assigned', 'task_completed', 'ai_alert', 'team_activity', 'event_invite')),
   title           VARCHAR(200) NOT NULL,
   body            TEXT NOT NULL,
   related_task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,

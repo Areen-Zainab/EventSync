@@ -17,6 +17,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     bestFor: "Students, small test teams",
     features: [
       "1 active event",
+      "Up to 2 invited events",
       "Up to 5 members",
       "Basic chat",
       "Manual task board",
@@ -31,7 +32,8 @@ export const PRICING_PLANS: PricingPlan[] = [
     period: "month per workspace",
     bestFor: "Growing event teams",
     features: [
-      "Up to 10 active events",
+      "Up to 2 active events",
+      "Up to 3 invited events",
       "Up to 25 members",
       "Unlimited chat",
       "Higher AI quota (500 AI tasks/month)",

@@ -14,8 +14,9 @@ const getPlanLimits = (planValue) => {
   if (plan === 'plus') {
     return {
       plan,
-      eventLimit: 10,
+      eventLimit: 2,
       memberLimit: 25,
+      inviteLimit: 3,
     };
   }
 
@@ -24,6 +25,7 @@ const getPlanLimits = (planValue) => {
       plan,
       eventLimit: null,
       memberLimit: null,
+      inviteLimit: null,
     };
   }
 
@@ -31,6 +33,7 @@ const getPlanLimits = (planValue) => {
     plan: 'free',
     eventLimit: 1,
     memberLimit: 5,
+    inviteLimit: 2,
   };
 };
 

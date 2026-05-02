@@ -74,6 +74,12 @@ const initializeSchemaIfEnabled = async () => {
     await pool.query(taskMigrationSql);
   }
 
+  const inviteMigrationPath = path.join(__dirname, 'event_invite_notifications_migration.sql');
+  if (fs.existsSync(inviteMigrationPath)) {
+    const inviteMigrationSql = fs.readFileSync(inviteMigrationPath, 'utf8');
+    await pool.query(inviteMigrationSql);
+  }
+
   schemaInitialized = true;
   console.log('[DATABASE] Schema initialized successfully.');
 };

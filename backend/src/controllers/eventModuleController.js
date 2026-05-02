@@ -723,10 +723,14 @@ const inviteMember = async (req, res, next) => {
     }
 
     const eventPlanRow = eventPlanResult.rows[0];
+    if (eventPlanRow.already_member) {
+      return res.status(409).json({ success: false, message: 'That user is already a member of this event.' });
+    }
+
     const ownerPlan = normalizePlan(eventPlanRow.owner_plan);
     const ownerPlanLimits = getPlanLimits(ownerPlan);
 
-    if (!eventPlanRow.already_member && ownerPlanLimits.memberLimit !== null && eventPlanRow.member_count >= ownerPlanLimits.memberLimit) {
+    if (ownerPlanLimits.memberLimit !== null && eventPlanRow.member_count >= ownerPlanLimits.memberLimit) {
       return res.status(403).json({
         success: false,
         message: buildMemberLimitMessage(ownerPlan, ownerPlanLimits.memberLimit),
@@ -734,20 +738,44 @@ const inviteMember = async (req, res, next) => {
       });
     }
 
-    const memberResult = await query(
-      `INSERT INTO event_members (event_id, user_id, role)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (event_id, user_id) DO UPDATE SET role = EXCLUDED.role
-       RETURNING id, event_id, user_id, role, created_at`,
-      [eventId, invitedUserId, role]
+    await query(
+      `DELETE FROM notifications
+       WHERE user_id = $1
+         AND type = 'event_invite'
+         AND related_event_id = $2`,
+      [invitedUserId, eventId]
+    );
+
+    const eventRowResult = await query(
+      `SELECT e.name AS event_name,
+              creator.name AS creator_name
+       FROM events e
+       JOIN users creator ON creator.id = e.created_by
+       WHERE e.id = $1`,
+      [eventId]
+    );
+
+    const eventRow = eventRowResult.rows[0];
+
+    await query(
+      `INSERT INTO notifications (user_id, type, title, body, related_event_id)
+       VALUES ($1, 'event_invite', $2, $3, $4)`,
+      [
+        invitedUserId,
+        `You were invited to ${eventRow?.event_name || 'an event'}`,
+        `${eventRow?.creator_name || 'A teammate'} invited you to join ${eventRow?.event_name || 'an event'}. Open your notifications to accept or reject the invite.`,
+        eventId,
+      ]
     );
 
     return res.json({
       success: true,
-      message: 'Member invited successfully.',
-      member: {
-        ...memberResult.rows[0],
+      message: 'Event invitation sent successfully.',
+      invite: {
+        event_id: eventId,
+        user_id: invitedUserId,
         email: invitedEmail,
+        role,
       },
     });
   } catch (err) {
