@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { Analytics } from "@vercel/analytics/next";
 import { Suspense } from "react";
-import PostHogAnalytics from "../components/PostHogAnalytics";
+import ClientAnalyticsWrapper from "../components/ClientAnalyticsWrapper";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,12 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body suppressHydrationWarning>
         <Suspense fallback={null}>
-          <PostHogAnalytics>
+          <ClientAnalyticsWrapper>
             {children}
-          </PostHogAnalytics>
-        </Suspense>
-        <Suspense fallback={null}>
-          <Analytics />
+          </ClientAnalyticsWrapper>
         </Suspense>
       </body>
     </html>
