@@ -18,10 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body suppressHydrationWarning>
         <Suspense fallback={null}>
-          <ClientAnalyticsWrapper>
-            {children}
-          </ClientAnalyticsWrapper>
+          <ClientAnalyticsWrapper />
         </Suspense>
+        {children}
       </body>
     </html>
   );

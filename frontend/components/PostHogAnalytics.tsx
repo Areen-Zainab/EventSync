@@ -2,7 +2,6 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
 import posthog from "posthog-js";
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
@@ -47,13 +46,10 @@ function PostHogPageView() {
   return null;
 }
 
-export default function PostHogAnalytics({ children }: { children: ReactNode }) {
+export default function PostHogAnalytics() {
   return (
-    <>
-      <Suspense fallback={null}>
-        <PostHogPageView />
-      </Suspense>
-      {children}
-    </>
+    <Suspense fallback={null}>
+      <PostHogPageView />
+    </Suspense>
   );
 }
