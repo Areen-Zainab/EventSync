@@ -381,13 +381,20 @@ const loadTaskWithAssignees = async (taskId) => {
 
 const ensureTaskAccess = async (userId, taskId) => {
   const result = await query(
-    `SELECT DISTINCT t.*,
+    `SELECT t.*,
             ${TASK_ASSIGNEE_FIELDS}
      FROM tasks t
-     LEFT JOIN event_members em ON em.event_id = t.event_id
      ${TASK_ASSIGNEE_JOIN}
      WHERE t.id = $1
-       AND (t.created_by = $2 OR em.user_id = $2)`,
+       AND (
+         t.created_by = $2
+         OR EXISTS (
+           SELECT 1
+           FROM event_members em
+           WHERE em.event_id = t.event_id
+             AND em.user_id = $2
+         )
+       )`,
     [taskId, userId]
   );
 
@@ -539,10 +546,9 @@ const getTasks = async (req, res, next) => {
     }
 
     const result = await query(
-      `SELECT DISTINCT t.*,
+      `SELECT t.*,
               ${TASK_ASSIGNEE_FIELDS}
        FROM tasks t
-       LEFT JOIN event_members em ON em.event_id = t.event_id
        ${TASK_ASSIGNEE_JOIN}
        ${whereClause}
        ORDER BY t.created_at DESC`,
