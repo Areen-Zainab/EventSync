@@ -451,6 +451,8 @@ const createEvent = async (req, res, next) => {
       );
 
       const event = eventResult.rows[0];
+
+      // Always add the creator as Organizer
       await client.query(
         `INSERT INTO event_members (event_id, user_id, role)
          VALUES ($1, $2, 'Organizer')
@@ -458,10 +460,13 @@ const createEvent = async (req, res, next) => {
         [event.id, createdBy]
       );
 
+      // Fetch creator's name for invite notification body
+      const creatorResult = await client.query('SELECT name FROM users WHERE id = $1', [createdBy]);
+      const creatorName = creatorResult.rows[0]?.name || 'A teammate';
+
       const invitedMembers = [];
       const skippedMembers = [];
       const processedMemberIds = new Set([createdBy]);
-      let currentMemberCount = 1;
 
       if (Array.isArray(members)) {
         for (const member of members) {
@@ -480,7 +485,7 @@ const createEvent = async (req, res, next) => {
           }
 
           if (!invitedUserId) {
-            skippedMembers.push({ email: member.email || null, role });
+            skippedMembers.push({ email: member.email || null, role, reason: 'user_not_found' });
             continue;
           }
 
@@ -488,23 +493,26 @@ const createEvent = async (req, res, next) => {
             continue;
           }
 
-          if (planLimits.memberLimit !== null && currentMemberCount >= planLimits.memberLimit) {
-            const limitError = new Error(buildMemberLimitMessage(userPlan, planLimits.memberLimit));
-            limitError.statusCode = 403;
-            limitError.code = 'PLAN_MEMBER_LIMIT_REACHED';
-            throw limitError;
-          }
-
+          // Remove any stale pending invite for this user + event before inserting a fresh one
           await client.query(
-            `INSERT INTO event_members (event_id, user_id, role)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (event_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-            [event.id, invitedUserId, role]
+            `DELETE FROM notifications
+             WHERE user_id = $1 AND type = 'event_invite' AND related_event_id = $2`,
+            [invitedUserId, event.id]
+          );
+
+          // Send an invite notification — user must Accept to be added to the event
+          await client.query(
+            `INSERT INTO notifications (user_id, type, title, body, related_event_id)
+             VALUES ($1, 'event_invite', $2, $3, $4)`,
+            [
+              invitedUserId,
+              `You were invited to ${event.name}`,
+              `${creatorName} invited you to join "${event.name}". Open your notifications to accept or decline.`,
+              event.id,
+            ]
           );
 
           processedMemberIds.add(invitedUserId);
-          currentMemberCount += 1;
-
           invitedMembers.push({ user_id: invitedUserId, email: invitedEmail || member.email || null, role });
         }
       }
@@ -527,6 +535,7 @@ const createEvent = async (req, res, next) => {
     next(err);
   }
 };
+
 
 // GET /api/events
 const getEvents = async (req, res, next) => {

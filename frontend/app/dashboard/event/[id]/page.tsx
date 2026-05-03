@@ -564,11 +564,18 @@ export default function EventOverviewPage() {
 
     socket.emit("chat:joinRoom", { eventId });
     socket.on("chat:newMessage", (message: EventMessage) => {
+      // Compute mine client-side so bubble alignment is correct regardless of server payload
+      const enriched: EventMessage = {
+        ...message,
+        mine: message.sender
+          ? (message.sender as { id?: string; name: string }).id === currentUserId
+          : false,
+      };
       setEventData((prev) =>
         prev
           ? {
               ...prev,
-              messages: prev.messages.some((m) => m.id === message.id) ? prev.messages : [...prev.messages, message],
+              messages: prev.messages.some((m) => m.id === message.id) ? prev.messages : [...prev.messages, enriched],
             }
           : prev
       );
@@ -589,7 +596,9 @@ export default function EventOverviewPage() {
           ? {
               ...prev,
               messages: prev.messages.map((m) =>
-                message_ids.includes(m.id) ? { ...m, read_count: (m.read_count || 0) + 1, read_by_me: true } : m
+                message_ids.includes(m.id)
+                  ? { ...m, read_count: (m.read_count || 0) + 1, read_by_me: true }
+                  : m
               ),
             }
           : prev
@@ -678,6 +687,19 @@ export default function EventOverviewPage() {
     if (!eventId) return;
     const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
     if (!token) return;
+    // Optimistically update local read_count so the user sees it increment immediately
+    setEventData((prev) =>
+      prev
+        ? {
+            ...prev,
+            messages: prev.messages.map((m) =>
+              m.id === messageId && !m.read_by_me
+                ? { ...m, read_count: (m.read_count || 0) + 1, read_by_me: true }
+                : m
+            ),
+          }
+        : prev
+    );
     await fetch(`${API_BASE_URL}/events/${eventId}/messages/read`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -921,7 +943,7 @@ export default function EventOverviewPage() {
               </p>
               <button
                 type="button"
-                className="btn-ghost px-3 py-1.5 text-xs"
+                className="btn-primary px-3 py-1.5 text-xs"
                 onClick={() => void extractTasksFromChat()}
                 disabled={extractingTasks}
               >
@@ -998,11 +1020,33 @@ export default function EventOverviewPage() {
                   }
                 }}
               />
+              {/* Hidden native file input, triggered by the 📎 button */}
               <input
+                id="chat-file-input"
                 type="file"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                style={{ maxWidth: isMobile ? "100%" : 220, fontSize: "0.75rem", width: isMobile ? "100%" : undefined }}
+                style={{ display: "none" }}
               />
+              <label
+                htmlFor="chat-file-input"
+                title="Attach a file"
+                style={{
+                  flexShrink: 0,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 36,
+                  height: 36,
+                  borderRadius: "50%",
+                  border: `1px solid ${selectedFile ? "var(--accent)" : "var(--border)"}`,
+                  background: selectedFile ? "rgba(124,92,252,0.12)" : "transparent",
+                  cursor: "pointer",
+                  fontSize: "1rem",
+                  transition: "all 0.15s",
+                }}
+              >
+                📎
+              </label>
               <button className="btn-primary px-4 py-2 text-sm" style={{ flexShrink: 0 }} disabled={sending || (!chatMsg.trim() && !selectedFile)} onClick={() => void sendMessage()}>
                 {sending ? "Sending..." : "Send"}
               </button>

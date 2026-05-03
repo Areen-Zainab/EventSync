@@ -47,7 +47,8 @@ const typeColor: Record<string, string> = {
   task_assigned: "var(--accent)",
   task_completed: "var(--on-track)",
   ai_alert: "var(--accent)", 
-  team_activity: "var(--on-track)" 
+  team_activity: "var(--on-track)",
+  event_invite: "var(--accent)",
 };
 
 const typeIcon: Record<string, string> = {
@@ -57,6 +58,7 @@ const typeIcon: Record<string, string> = {
   task_completed: "✅",
   ai_alert: "🤖",
   team_activity: "👥",
+  event_invite: "📬",
 };
 
 const getRelativeTime = (dateString: string): string => {
@@ -81,6 +83,7 @@ export default function NotificationsPage() {
 
   const typeByFilter: Record<string, string> = {
     All: "all",
+    "Invitations": "event_invite",
     "Task Reminders": "task_reminder,task_overdue",
     "AI Alerts": "ai_alert",
     "Team Activity": "team_activity,task_assigned,task_completed",
@@ -308,8 +311,8 @@ export default function NotificationsPage() {
     </div>
 
     {/* Filters */}
-    <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-      {['All', 'Task Reminders', 'AI Alerts', 'Team Activity'].map(f => (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      {['All', 'Invitations', 'Task Reminders', 'AI Alerts', 'Team Activity'].map(f => (
         <button
           key={f}
           onClick={() => setFilter(f)}

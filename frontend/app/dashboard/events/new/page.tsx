@@ -223,7 +223,7 @@ export default function NewEventPage() {
             <div>
               <p style={{ fontFamily: 'Syne, sans-serif', fontWeight: 700, color: 'var(--text-1)', marginBottom: 4 }}>Invite Team Members</p>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
-                Add by email or share the invite link after creating.
+                Enter team members&apos; emails below. Each person will receive an invitation notification and can accept or decline.
                 {planInfo?.member_limit !== null ? ` This plan allows up to ${planInfo?.member_limit} members per event.` : ' This plan allows unlimited members per event.'}
               </p>
             </div>
@@ -240,12 +240,11 @@ export default function NewEventPage() {
               <button onClick={() => setStep(3)} className="btn-ghost py-2 text-sm" style={{ alignSelf: 'flex-start', padding: '8px 16px' }}>Skip for now</button>
             </div>
 
-            <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: 14, border: '1px solid var(--border)' }}>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginBottom: 8 }}>Or share invite link</p>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input className="input" value="https://eventsync.app/join/abc123" readOnly style={{ flex: 1, background: 'var(--surface-3)', cursor: 'default' }} />
-                <button className="btn-ghost py-2 px-4 text-sm" style={{ flexShrink: 0 }}>Copy</button>
-              </div>
+            <div style={{ background: 'rgba(124,92,252,0.06)', borderRadius: 10, padding: 12, border: '1px solid rgba(124,92,252,0.18)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ fontSize: '1rem', flexShrink: 0 }}>📬</span>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>
+                Invitations are sent as in-app notifications. Invited users can <strong style={{ color: 'var(--text-1)' }}>Accept</strong> or <strong style={{ color: 'var(--text-1)' }}>Reject</strong> from their Notifications page before they appear as team members.
+              </p>
             </div>
           </div>
         )}

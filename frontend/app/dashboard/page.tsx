@@ -223,8 +223,8 @@ export default function DashboardPage() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <Link href="/dashboard/pricing" className="btn-ghost px-4 py-2.5 text-sm" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            Pricing
+          <Link href="/dashboard/pricing" className="btn-primary px-4 py-2.5 text-sm" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            ✦ Pricing
           </Link>
           {eventCreationBlocked ? (
             <button className="btn-primary px-4 py-2.5 text-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: 0.6, cursor: 'not-allowed' }} disabled title="Plan event limit reached. Upgrade to create more events.">
