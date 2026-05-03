@@ -182,6 +182,60 @@ export default function NotificationsPage() {
     }
   };
 
+  const [processingIds, setProcessingIds] = useState<Record<string, boolean>>({});
+
+  const acceptInvite = async (id: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) return;
+
+    setProcessingIds(p => ({ ...p, [id]: true }));
+    try {
+      const res = await fetch(`${API_BASE_URL}/notifications/${id}/accept`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.message || "Failed to accept invite.");
+
+      // Remove the invite notification from the list
+      setItems(items => items.filter(item => item.id !== id));
+    } catch (err) {
+      console.error("Error accepting invite:", err);
+      // You might show a user-facing error here
+    } finally {
+      setProcessingIds(p => ({ ...p, [id]: false }));
+    }
+  };
+
+  const rejectInvite = async (id: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) return;
+
+    setProcessingIds(p => ({ ...p, [id]: true }));
+    try {
+      const res = await fetch(`${API_BASE_URL}/notifications/${id}/reject`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.message || "Failed to reject invite.");
+
+      // Remove the invite notification from the list
+      setItems(items => items.filter(item => item.id !== id));
+    } catch (err) {
+      console.error("Error rejecting invite:", err);
+    } finally {
+      setProcessingIds(p => ({ ...p, [id]: false }));
+    }
+  };
+
   const markAllAsRead = async () => {
     const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
     if (!token) return;
@@ -317,6 +371,27 @@ export default function NotificationsPage() {
               <p style={{ fontSize: '0.8rem', color: 'var(--text-3)', margin: 0, lineHeight: 1.4 }}>
                 {n.body}
               </p>
+              {/* Accept/Reject for event invites */}
+              {n.type === 'event_invite' && (
+                <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); acceptInvite(n.id); }}
+                    disabled={!!processingIds[n.id]}
+                    className="btn-primary"
+                    style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                  >
+                    {processingIds[n.id] ? 'Accepting…' : 'Accept'}
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); rejectInvite(n.id); }}
+                    disabled={!!processingIds[n.id]}
+                    className="btn-ghost"
+                    style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                  >
+                    {processingIds[n.id] ? 'Rejecting…' : 'Reject'}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
