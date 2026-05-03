@@ -52,7 +52,15 @@ type ApiEventsResponse = {
   events: EventItem[];
 };
 
-type FilterMode = "all" | "my_tasks" | "by_member" | "by_deadline" | "at_risk";
+type FilterMode =
+  | "all"
+  | "my_tasks"
+  | "by_member"
+  | "by_deadline"
+  | "at_risk"
+  | "today"
+  | "high_priority"
+  | "low_priority";
 type SortMode = "deadline" | "priority" | "assignee";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api";
@@ -130,6 +138,16 @@ export default function TasksPage() {
     return `${year}-${month}-${day}`;
   };
 
+  const getLocalDateKey = (value: string | null): string | null => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   const buildDraftFromTask = (task: Task | null) => ({
     event_id: task?.event_id || availableEvents[0]?.id || "",
     title: task?.title || "",
@@ -144,6 +162,16 @@ export default function TasksPage() {
     let nextTasks = [...inputTasks];
     if ((activeFilter === "my_tasks" || personalViewOnly) && currentUserId) {
       nextTasks = nextTasks.filter((task) => (task.assigned_to_ids || []).includes(currentUserId));
+    }
+    if (activeFilter === "today") {
+      const todayKey = getTodayDateInputValue();
+      nextTasks = nextTasks.filter((task) => getLocalDateKey(task.due_date) === todayKey);
+    }
+    if (activeFilter === "high_priority") {
+      nextTasks = nextTasks.filter((task) => task.priority === "high");
+    }
+    if (activeFilter === "low_priority") {
+      nextTasks = nextTasks.filter((task) => task.priority === "low");
     }
     if (activeFilter === "at_risk") {
       const now = Date.now();
@@ -469,6 +497,9 @@ export default function TasksPage() {
         {[
           { label: "All Tasks", value: "all" as const },
           { label: "My Tasks", value: "my_tasks" as const },
+          { label: "Today", value: "today" as const },
+          { label: "High Priority", value: "high_priority" as const },
+          { label: "Low Priority", value: "low_priority" as const },
           { label: "By Member", value: "by_member" as const },
           { label: "By Deadline", value: "by_deadline" as const },
           { label: "At Risk", value: "at_risk" as const },
