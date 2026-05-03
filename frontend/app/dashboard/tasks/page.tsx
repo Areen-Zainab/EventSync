@@ -476,6 +476,30 @@ export default function TasksPage() {
           <p style={{ fontSize: '0.875rem', color: 'var(--text-2)' }}>All tasks across your events</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <select
+            value={activeFilter}
+            onChange={(e) => setActiveFilter(e.target.value as FilterMode)}
+            style={{
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-2)',
+              borderRadius: 999,
+              padding: '8px 12px',
+              fontSize: '0.8rem',
+              cursor: 'pointer',
+              minWidth: 150,
+            }}
+            title="Filter tasks"
+          >
+            <option value="all">All Tasks</option>
+            <option value="my_tasks">My Tasks</option>
+            <option value="today">Today</option>
+            <option value="high_priority">High Priority</option>
+            <option value="low_priority">Low Priority</option>
+            <option value="by_member">By Member</option>
+            <option value="by_deadline">By Deadline</option>
+            <option value="at_risk">At Risk</option>
+          </select>
           <button
             className="btn-ghost px-3 py-1.5 text-xs"
             onClick={() => setPersonalViewOnly((prev) => !prev)}
