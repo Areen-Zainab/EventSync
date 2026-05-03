@@ -46,42 +46,77 @@ export default function FeedbackPrompt() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    const openFeedback = () => {
+      const userRaw = localStorage.getItem("eventsync_user");
+      if (!userRaw) return;
+
+      try {
+        const user = JSON.parse(userRaw) as UserAccount;
+        if (user?.id) {
+          setActiveUser(user);
+          setIsVisible(true);
+        }
+      } catch {
+        return;
+      }
+    };
+
+    window.addEventListener("eventsync-open-feedback", openFeedback as EventListener);
+
     const userRaw = localStorage.getItem("eventsync_user");
-    if (!userRaw) return;
+    if (!userRaw) {
+      return () => {
+        window.removeEventListener("eventsync-open-feedback", openFeedback as EventListener);
+      };
+    }
 
     let user: UserAccount | null = null;
     try {
       user = JSON.parse(userRaw) as UserAccount;
     } catch {
-      return;
+      return () => {
+        window.removeEventListener("eventsync-open-feedback", openFeedback as EventListener);
+      };
     }
 
-    if (!user?.id) return;
+    if (!user?.id) {
+      return () => {
+        window.removeEventListener("eventsync-open-feedback", openFeedback as EventListener);
+      };
+    }
+
+    setActiveUser(user);
 
     const now = Date.now();
     const nextAllowedRaw = localStorage.getItem(`eventsync_feedback_next_allowed_${user.id}`);
     const nextAllowed = nextAllowedRaw ? Number(nextAllowedRaw) : 0;
-    if (Number.isFinite(nextAllowed) && nextAllowed > now) return;
+    if (Number.isFinite(nextAllowed) && nextAllowed > now) {
+      return () => {
+        window.removeEventListener("eventsync-open-feedback", openFeedback as EventListener);
+      };
+    }
 
     const promptAtRaw = localStorage.getItem(`eventsync_feedback_prompt_at_${user.id}`);
     const promptAt = promptAtRaw ? Number(promptAtRaw) : NaN;
 
-    if (!Number.isFinite(promptAt)) return;
+    if (Number.isFinite(promptAt) && promptAt > now) {
+      const delay = promptAt - now;
+      const timer = window.setTimeout(() => {
+        setIsVisible(true);
+      }, delay);
 
-    setActiveUser(user);
-
-    if (promptAt <= now) {
-      setIsVisible(true);
-      return;
+      return () => {
+        window.clearTimeout(timer);
+        window.removeEventListener("eventsync-open-feedback", openFeedback as EventListener);
+      };
     }
 
-    const delay = promptAt - now;
-    const timer = window.setTimeout(() => {
+    if (Number.isFinite(promptAt) && promptAt <= now) {
       setIsVisible(true);
-    }, delay);
+    }
 
     return () => {
-      window.clearTimeout(timer);
+      window.removeEventListener("eventsync-open-feedback", openFeedback as EventListener);
     };
   }, []);
 

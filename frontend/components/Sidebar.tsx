@@ -4,6 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 const bottomItems = [
+  { label: "Submit Feedback", action: "eventsync-open-feedback", icon: "✍" },
   { label: "Settings", href: "/dashboard/settings", icon: "⚙" },
 ];
 
@@ -141,10 +142,26 @@ function SidebarInner() {
 
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
               {bottomItems.map(item => (
-                <Link key={item.label} href={item.href} onClick={() => setMobileOpen(false)} className="sidebar-link">
-                  <span style={{ fontSize: 15 }}>{item.icon}</span>
-                  {item.label}
-                </Link>
+                item.href ? (
+                  <Link key={item.label} href={item.href} onClick={() => setMobileOpen(false)} className="sidebar-link">
+                    <span style={{ fontSize: 15 }}>{item.icon}</span>
+                    {item.label}
+                  </Link>
+                ) : (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent(item.action || "eventsync-open-feedback"));
+                      setMobileOpen(false);
+                    }}
+                    className="sidebar-link"
+                    style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                  >
+                    <span style={{ fontSize: 15 }}>{item.icon}</span>
+                    {item.label}
+                  </button>
+                )
               ))}
             </div>
           </aside>
@@ -174,10 +191,23 @@ function SidebarInner() {
 
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12 }}>
         {bottomItems.map(item => (
-          <Link key={item.label} href={item.href} className="sidebar-link">
-            <span style={{ fontSize: 15 }}>{item.icon}</span>
-            {item.label}
-          </Link>
+          item.href ? (
+            <Link key={item.label} href={item.href} className="sidebar-link">
+              <span style={{ fontSize: 15 }}>{item.icon}</span>
+              {item.label}
+            </Link>
+          ) : (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent(item.action || "eventsync-open-feedback"))}
+              className="sidebar-link"
+              style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer' }}
+            >
+              <span style={{ fontSize: 15 }}>{item.icon}</span>
+              {item.label}
+            </button>
+          )
         ))}
 
         {/* User avatar */}
