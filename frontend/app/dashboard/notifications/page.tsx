@@ -183,6 +183,7 @@ export default function NotificationsPage() {
   };
 
   const [processingIds, setProcessingIds] = useState<Record<string, boolean>>({});
+  const [availableOptions, setAvailableOptions] = useState<Record<string, Array<{ id: string; name: string }>>>({});
 
   const acceptInvite = async (id: string) => {
     const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
@@ -199,13 +200,44 @@ export default function NotificationsPage() {
       });
 
       const payload = await res.json();
-      if (!res.ok) throw new Error(payload.message || "Failed to accept invite.");
+      if (!res.ok) {
+        // If invite limit reached, show available events to replace
+        if (res.status === 409 && payload.code === 'INVITE_LIMIT_REACHED') {
+          setAvailableOptions(p => ({ ...p, [id]: payload.available_events || [] }));
+          return;
+        }
+        throw new Error(payload.message || "Failed to accept invite.");
+      }
 
       // Remove the invite notification from the list
       setItems(items => items.filter(item => item.id !== id));
     } catch (err) {
       console.error("Error accepting invite:", err);
       // You might show a user-facing error here
+    } finally {
+      setProcessingIds(p => ({ ...p, [id]: false }));
+    }
+  };
+
+  const acceptInviteWithReplace = async (id: string, replaceEventId: string) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("eventsync_token") : null;
+    if (!token) return;
+    setProcessingIds(p => ({ ...p, [id]: true }));
+    try {
+      const res = await fetch(`${API_BASE_URL}/notifications/${id}/accept`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ replace_event_id: replaceEventId }),
+      });
+      const payload = await res.json();
+      if (!res.ok) throw new Error(payload.message || "Failed to accept invite.");
+      setItems(items => items.filter(item => item.id !== id));
+      setAvailableOptions(p => ({ ...p, [id]: [] }));
+    } catch (err) {
+      console.error("Error accepting invite with replace:", err);
     } finally {
       setProcessingIds(p => ({ ...p, [id]: false }));
     }
@@ -390,6 +422,16 @@ export default function NotificationsPage() {
                   >
                     {processingIds[n.id] ? 'Rejecting…' : 'Reject'}
                   </button>
+                </div>
+              )}
+              {n.type === 'event_invite' && availableOptions[n.id] && availableOptions[n.id].length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-2)', marginBottom: 6 }}>You are at your invite limit — pick an event to leave:</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {availableOptions[n.id].map(opt => (
+                      <button key={opt.id} onClick={(e) => { e.stopPropagation(); acceptInviteWithReplace(n.id, opt.id); }} className="btn-ghost" style={{ padding: '6px 10px' }}>{`Replace: ${opt.name}`}</button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

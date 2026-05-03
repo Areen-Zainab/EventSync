@@ -105,6 +105,25 @@ const getUnreadCount = async (req, res, next) => {
   }
 };
 
+// GET /api/invitations - Get event invitation notifications for the logged-in user
+const getInvitations = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await query(
+      `SELECT id, type, title, body, related_event_id, is_read, created_at
+       FROM notifications
+       WHERE user_id = $1 AND type = 'event_invite'
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+
+    return res.json({ success: true, invitations: result.rows });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 // PATCH /api/notifications/:id/read - Mark a notification as read
 const markAsRead = async (req, res, next) => {
   try {

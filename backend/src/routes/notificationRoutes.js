@@ -2,6 +2,7 @@ const express = require('express');
 const {
   getNotifications,
   getUnreadCount,
+  getInvitations,
   markAsRead,
   markAllAsRead,
   deleteNotification,
@@ -17,6 +18,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/', getNotifications);
+router.get('/invitations', getInvitations);
 router.get('/unread-count', getUnreadCount);
 router.get('/preferences', getPreferences);
 router.put('/preferences', updatePreferences);

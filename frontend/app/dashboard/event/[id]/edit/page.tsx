@@ -79,6 +79,7 @@ export default function EditEventPage() {
   const [venue, setVenue] = useState("");
   const [type, setType] = useState("Academic");
   const [members, setMembers] = useState<MemberDraft[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<Array<{ event_id: string; user_id?: string | null; email?: string | null; role: string }>>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("Member");
 
@@ -239,6 +240,17 @@ export default function EditEventPage() {
           if (!response.ok || !payload.success) {
             throw new Error(payload.message || `Failed to invite ${member.email}.`);
           }
+          // Show immediate feedback that an invite was sent
+          try {
+            const invite = (payload as any).invite;
+            if (invite) {
+              setPendingInvites((p) => [...p, { event_id: invite.event_id, user_id: invite.user_id || null, email: invite.email || member.email, role: invite.role }]);
+            }
+          } catch (e) {
+            // ignore
+          }
+          // remove the draft invite row from members
+          setMembers((cur) => cur.filter((m) => m !== member));
           continue;
         }
 
@@ -367,6 +379,20 @@ export default function EditEventPage() {
                 </button>
               </div>
             ))}
+            {pendingInvites.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <p style={{ margin: '8px 0', fontWeight: 700, color: 'var(--text-1)' }}>Pending Invites</p>
+                {pendingInvites.map((inv, i) => (
+                  <div key={`${inv.email || inv.user_id}-${i}`} className="card" style={{ padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 600 }}>{inv.email || 'Invited user'}</p>
+                      <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-3)' }}>{inv.role} · Invite sent</p>
+                    </div>
+                    <div style={{ color: 'var(--text-3)', fontSize: '0.85rem' }}>Pending</div>
+                  </div>
+                ))}
+              </div>
+            )}
             {visibleMembers.length === 0 && (
               <div className="card" style={{ padding: 16, borderStyle: "dashed" }}>
                 <p style={{ margin: 0, color: "var(--text-3)", fontSize: "0.85rem" }}>No members have been added yet.</p>
