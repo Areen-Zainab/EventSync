@@ -82,6 +82,7 @@ export default function TasksPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterMode>("all");
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("deadline");
   const [personalViewOnly, setPersonalViewOnly] = useState(false);
   const [createTargetStatus, setCreateTargetStatus] = useState<TaskStatus>("pending");
@@ -122,6 +123,19 @@ export default function TasksPage() {
     () => Object.fromEntries(availableEvents.map((eventItem) => [eventItem.id, eventItem.name])),
     [availableEvents]
   );
+
+  const filterOptions: Array<{ label: string; value: FilterMode }> = [
+    { label: "All Tasks", value: "all" },
+    { label: "My Tasks", value: "my_tasks" },
+    { label: "Today", value: "today" },
+    { label: "High Priority", value: "high_priority" },
+    { label: "Low Priority", value: "low_priority" },
+    { label: "By Member", value: "by_member" },
+    { label: "By Deadline", value: "by_deadline" },
+    { label: "At Risk", value: "at_risk" },
+  ];
+
+  const activeFilterLabel = filterOptions.find((option) => option.value === activeFilter)?.label || "All Tasks";
 
   const formatDate = (isoDate: string | null): string => {
     if (!isoDate) return "No due date";
@@ -475,31 +489,69 @@ export default function TasksPage() {
           <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>Task Board</h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-2)' }}>All tasks across your events</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <select
-            value={activeFilter}
-            onChange={(e) => setActiveFilter(e.target.value as FilterMode)}
-            style={{
-              background: 'var(--surface-2)',
-              border: '1px solid var(--border)',
-              color: 'var(--text-2)',
-              borderRadius: 999,
-              padding: '8px 12px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              minWidth: 150,
-            }}
-            title="Filter tasks"
-          >
-            <option value="all">All Tasks</option>
-            <option value="my_tasks">My Tasks</option>
-            <option value="today">Today</option>
-            <option value="high_priority">High Priority</option>
-            <option value="low_priority">Low Priority</option>
-            <option value="by_member">By Member</option>
-            <option value="by_deadline">By Deadline</option>
-            <option value="at_risk">At Risk</option>
-          </select>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              className="btn-ghost px-3 py-1.5 text-xs"
+              onClick={() => setShowFilterMenu((prev) => !prev)}
+              style={{
+                minWidth: 150,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+                borderColor: showFilterMenu ? 'var(--accent)' : undefined,
+                color: showFilterMenu ? 'var(--accent)' : undefined,
+                background: showFilterMenu ? 'rgba(124,92,252,0.12)' : undefined,
+              }}
+              title="Filter tasks"
+            >
+              <span>Filter: {activeFilterLabel}</span>
+              <span style={{ fontSize: 10 }}>▾</span>
+            </button>
+
+            {showFilterMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  minWidth: 190,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 14,
+                  boxShadow: '0 16px 40px rgba(0,0,0,0.28)',
+                  padding: 6,
+                  zIndex: 30,
+                }}
+              >
+                {filterOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setActiveFilter(option.value);
+                      setShowFilterMenu(false);
+                    }}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      borderRadius: 10,
+                      border: 'none',
+                      background: activeFilter === option.value ? 'rgba(124,92,252,0.14)' : 'transparent',
+                      color: activeFilter === option.value ? 'var(--accent)' : 'var(--text-2)',
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             className="btn-ghost px-3 py-1.5 text-xs"
             onClick={() => setPersonalViewOnly((prev) => !prev)}
