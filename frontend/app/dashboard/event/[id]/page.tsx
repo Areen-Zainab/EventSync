@@ -222,6 +222,7 @@ export default function EventOverviewPage() {
     status: TaskStatus;
   } | null>(null);
   const [personalViewOnly, setPersonalViewOnly] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<"all" | "high" | "medium" | "low" | "overdue">("all");
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskError, setTaskError] = useState("");
   const [extractingTasks, setExtractingTasks] = useState(false);
@@ -256,17 +257,34 @@ export default function EventOverviewPage() {
     if (!eventData) {
       return { todo: [] as EventTask[], inProgress: [] as EventTask[], done: [] as EventTask[] };
     }
-    if (!personalViewOnly || !currentUserId) {
-      return eventData.tasks;
-    }
 
-    const includeMine = (task: EventTask) => (task.assigned_to_ids || []).includes(currentUserId);
-    return {
-      todo: eventData.tasks.todo.filter(includeMine),
-      inProgress: eventData.tasks.inProgress.filter(includeMine),
-      done: eventData.tasks.done.filter(includeMine),
+    // Step 1: personal-view filter
+    const baseInclude = (!personalViewOnly || !currentUserId)
+      ? (_task: EventTask) => true
+      : (task: EventTask) => (task.assigned_to_ids || []).includes(currentUserId!);
+
+    // Step 2: priority / overdue filter
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const filterInclude = (task: EventTask & { priority?: TaskPriority }) => {
+      if (taskFilter === "all") return true;
+      if (taskFilter === "overdue") {
+        if (!task.due_date) return false;
+        const d = new Date(task.due_date);
+        return !isNaN(d.getTime()) && d < today && task.status !== "done";
+      }
+      return (task as EventTask & { priority?: TaskPriority }).priority === taskFilter;
     };
-  }, [eventData, personalViewOnly, currentUserId]);
+
+    const applyFilters = (tasks: EventTask[]) =>
+      tasks.filter((t) => baseInclude(t) && filterInclude(t as EventTask & { priority?: TaskPriority }));
+
+    return {
+      todo: applyFilters(eventData.tasks.todo),
+      inProgress: applyFilters(eventData.tasks.inProgress),
+      done: applyFilters(eventData.tasks.done),
+    };
+  }, [eventData, personalViewOnly, currentUserId, taskFilter]);
 
   useEffect(() => {
     const syncViewport = () => setIsMobile(window.innerWidth <= 900);
@@ -1004,7 +1022,83 @@ export default function EventOverviewPage() {
         {tab === "Tasks" && (
           <div style={{ padding: isMobile ? "16px 14px" : "24px 32px" }}>
             {taskError && <p style={{ color: "var(--overdue)", marginBottom: 12, fontSize: "0.8rem" }}>{taskError}</p>}
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            {/* ── Tasks toolbar ── */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 12,
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              {/* Left: filter dropdown */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    fontSize: "0.72rem",
+                    fontWeight: 600,
+                    color: "var(--text-3)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Filter
+                </span>
+                <select
+                  id="task-filter-dropdown"
+                  value={taskFilter}
+                  onChange={(e) =>
+                    setTaskFilter(e.target.value as typeof taskFilter)
+                  }
+                  style={{
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    color: taskFilter !== "all" ? "var(--accent)" : "var(--text-2)",
+                    fontSize: "0.78rem",
+                    fontWeight: 500,
+                    padding: "5px 28px 5px 10px",
+                    cursor: "pointer",
+                    outline: "none",
+                    appearance: "none",
+                    WebkitAppearance: "none",
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b7280'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: "no-repeat",
+                    backgroundPosition: "right 8px center",
+                    transition: "border-color 0.15s, color 0.15s",
+                    borderColor: taskFilter !== "all" ? "var(--accent)" : undefined,
+                  }}
+                >
+                  <option value="all">All tasks</option>
+                  <option value="high">🔴 High priority</option>
+                  <option value="medium">🟡 Medium priority</option>
+                  <option value="low">🟢 Low priority</option>
+                  <option value="overdue">⏰ Overdue</option>
+                </select>
+                {taskFilter !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => setTaskFilter("all")}
+                    title="Clear filter"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--text-3)",
+                      fontSize: "0.75rem",
+                      padding: 0,
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Right: personal view toggle */}
               <button
                 type="button"
                 className="btn-ghost px-3 py-1.5 text-xs"
