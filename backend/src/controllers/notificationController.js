@@ -406,6 +406,7 @@ const updatePreferences = async (req, res, next) => {
 module.exports = {
   getNotifications,
   getUnreadCount,
+  getInvitations,
   markAsRead,
   markAllAsRead,
   deleteNotification,
