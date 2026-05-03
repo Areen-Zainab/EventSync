@@ -76,10 +76,7 @@ export default function EventsPage() {
           <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-1)', marginBottom: 4 }}>My Events</h1>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-2)' }}>{totalEvents} events</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Link href="/dashboard/invitations" className="btn-ghost px-3 py-2 text-sm" style={{ textDecoration: 'none' }}>Invitations</Link>
-          <Link href="/dashboard/events/new" className="btn-primary px-4 py-2.5 text-sm" style={{ textDecoration: 'none' }}>+ New Event</Link>
-        </div>
+        <Link href="/dashboard/events/new" className="btn-primary px-4 py-2.5 text-sm" style={{ textDecoration: 'none' }}>+ New Event</Link>
       </div>
 
       {isLoading && <p style={{ fontSize: '0.85rem', color: 'var(--text-3)', marginBottom: 16 }}>Loading events...</p>}
